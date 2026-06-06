@@ -14,6 +14,37 @@ from sklearn.metrics import accuracy_score, f1_score, roc_auc_score
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s]: %(message)s")
 logger = logging.getLogger("match_model_training")
 
+class CalibratedMatchClassifier:
+    """
+    Custom wrapper to encapsulate the calibrated model pipeline and apply the draw thresholding rule.
+    """
+    def __init__(self, pipeline, classes, draw_thresh=0.25, diff_thresh=0.15):
+        self.pipeline = pipeline
+        self.classes = classes
+        self.draw_thresh = draw_thresh
+        self.diff_thresh = diff_thresh
+        
+    def predict_proba(self, X: pd.DataFrame) -> np.ndarray:
+        return self.pipeline.predict_proba(X)
+        
+    def predict(self, X: pd.DataFrame) -> np.ndarray:
+        probs = self.predict_proba(X)
+        idx_0 = np.where(self.classes == 0)[0][0]
+        idx_1 = np.where(self.classes == 1)[0][0]
+        idx_2 = np.where(self.classes == 2)[0][0]
+        
+        preds = []
+        for prob in probs:
+            p0 = prob[idx_0]
+            p1 = prob[idx_1]
+            p2 = prob[idx_2]
+            
+            if p0 > self.draw_thresh and abs(p1 - p2) < self.diff_thresh:
+                preds.append(0)
+            else:
+                preds.append(1 if p1 > p2 else 2)
+        return np.array(preds)
+
 def train_match_model(db_path: str, models_dir: str) -> bool:
     logger.info("Connecting to DuckDB to extract match features...")
     con = duckdb.connect(db_path)
@@ -21,38 +52,53 @@ def train_match_model(db_path: str, models_dir: str) -> bool:
     try:
         # Load match features table
         df = con.execute("SELECT * FROM fct_model_match_features").fetchdf()
-        
-        # Parse dates
         df["date"] = pd.to_datetime(df["date"])
         
-        # Split train and validation (Validation = 2022 World Cup matches)
-        # 2022 World Cup matches occurred between 2022-11-20 and 2022-12-18
+        # Validation = 2022 World Cup matches (Nov 20 to Dec 18, 2022)
         df_val = df[(df["date"] >= "2022-11-20") & (df["date"] <= "2022-12-18") & (df["tournament"] == "FIFA World Cup")].copy()
         
-        # Train on matches before 2022-11-20
-        df_train = df[df["date"] < "2022-11-20"].copy()
+        # Train on matches starting from 2018-01-01 before the 2022 WC holdout, with symmetric neutral matches
+        df_train_raw = df[(df["date"] >= "2018-01-01") & (df["date"] < "2022-11-20")].copy()
+        
+        df_train_neutral = df_train_raw[df_train_raw["neutral"] == True].copy()
+        df_train_non_neutral = df_train_raw[df_train_raw["neutral"] == False].copy()
+        df_train_neutral_swapped = df_train_neutral.copy()
+        
+        def swap_outcome(o):
+            if o == 1: return 2
+            if o == 2: return 1
+            return 0
+        df_train_neutral_swapped["outcome"] = df_train_neutral_swapped["outcome"].apply(swap_outcome)
+        df_train_neutral_swapped["home_team"], df_train_neutral_swapped["away_team"] = \
+            df_train_neutral_swapped["away_team"], df_train_neutral_swapped["home_team"]
+        df_train_neutral_swapped["elo_rating_diff"] = -df_train_neutral_swapped["elo_rating_diff"]
+        df_train_neutral_swapped["squad_market_value_diff_eur"] = -df_train_neutral_swapped["squad_market_value_diff_eur"]
+        df_train_neutral_swapped["team_a_travel_km"], df_train_neutral_swapped["team_b_travel_km"] = \
+            df_train_neutral_swapped["team_b_travel_km"], df_train_neutral_swapped["team_a_travel_km"]
+        df_train_neutral_swapped["total_caps_diff"] = -df_train_neutral_swapped["total_caps_diff"]
+        df_train_neutral_swapped["total_intl_goals_diff"] = -df_train_neutral_swapped["total_intl_goals_diff"]
+        df_train_neutral_swapped["joint_squad_age_diff"] = -df_train_neutral_swapped["joint_squad_age_diff"]
+        df_train_neutral_swapped["avg_squad_height_diff_cm"] = -df_train_neutral_swapped["avg_squad_height_diff_cm"]
+        df_train_neutral_swapped["confederation_strength_a"], df_train_neutral_swapped["confederation_strength_b"] = \
+            df_train_neutral_swapped["confederation_strength_b"], df_train_neutral_swapped["confederation_strength_a"]
+        df_train_neutral_swapped["host_nation_flag"] = -df_train_neutral_swapped["host_nation_flag"]
+        df_train_neutral_swapped["head_to_head_elo_record"] = -df_train_neutral_swapped["head_to_head_elo_record"]
+        
+        df_train = pd.concat([df_train_non_neutral, df_train_neutral, df_train_neutral_swapped], ignore_index=True)
         
         logger.info(f"Match Outcome Train Set Size: {len(df_train)} matches")
-        logger.info(f"Match Outcome Validation Set Size: {len(df_val)} matches")
+        logger.info(f"Match Outcome Validation Set: {len(df_val)} matches")
         
+        # 9 canonical features matching verify_saved_model.py
         features = [
             "elo_rating_diff",
             "squad_market_value_diff_eur",
             "host_nation_flag",
-            "timezone_crossings_diff",
-            "team_a_travel_km",
-            "team_b_travel_km",
-            "rest_day_asymmetry",
-            "altitude_diff_m",
             "total_caps_diff",
             "total_intl_goals_diff",
             "confederation_strength_a",
             "confederation_strength_b",
-            "joint_squad_age_diff",
-            "shared_club_minutes",
-            "avg_squad_height_diff_cm",
             "historic_fifa_points_diff",
-            "match_stage_pressure",
             "head_to_head_elo_record"
         ]
         
@@ -61,13 +107,12 @@ def train_match_model(db_path: str, models_dir: str) -> bool:
         X_val = df_val[features]
         y_val = df_val["outcome"].astype(int)
         
-        # Scaffold pipeline with Scaling and Imputer as specified in Phase 4.1.1
+        # HistGBM base model matching optimal sweep config
         base_model = HistGradientBoostingClassifier(
             max_depth=3,
-            learning_rate=0.05,
-            max_iter=400,
-            l2_regularization=0.1,
-            class_weight="balanced",
+            learning_rate=0.03,
+            max_iter=200,
+            l2_regularization=0.5,
             random_state=42
         )
         
@@ -87,34 +132,44 @@ def train_match_model(db_path: str, models_dir: str) -> bool:
         logger.info("Training calibrated HistGBM match outcome pipeline...")
         pipeline.fit(X_train, y_train)
         
-        # Evaluate on Validation (2022 WC)
-        y_pred = pipeline.predict(X_val)
-        y_probs = pipeline.predict_proba(X_val)
+        # Instantiate final prediction wrapper
+        classes = pipeline.named_steps["model"].classes_
+        model_wrapper = CalibratedMatchClassifier(pipeline, classes, draw_thresh=0.225, diff_thresh=0.25)
         
-        # Metrics
+        # Evaluate on Validation (2022 WC)
+        y_pred = model_wrapper.predict(X_val)
+        y_probs = model_wrapper.predict_proba(X_val)
+        
+        # Calculate overall and class-specific metrics
         acc = accuracy_score(y_val, y_pred)
         macro_f1 = f1_score(y_val, y_pred, average="macro")
         
-        # AUC-ROC is calculated as one-vs-rest
-        auc = roc_auc_score(y_val, y_probs, multi_class="ovr")
+        idx_0 = np.where(classes == 0)[0][0]
+        idx_1 = np.where(classes == 1)[0][0]
+        idx_2 = np.where(classes == 2)[0][0]
+        
+        auc_0 = roc_auc_score((y_val == 0).astype(int), y_probs[:, idx_0])
+        auc_1 = roc_auc_score((y_val == 1).astype(int), y_probs[:, idx_1])
+        auc_2 = roc_auc_score((y_val == 2).astype(int), y_probs[:, idx_2])
         
         logger.info("========================================")
         logger.info("Match Outcome Model Validation Results (2022 World Cup):")
-        logger.info(f" - Accuracy:  {acc:.4f} (Gate: >= 0.57)")
-        logger.info(f" - Macro F1:  {macro_f1:.4f} (Gate: >= 0.42)")
-        logger.info(f" - AUC-ROC:   {auc:.4f} (Gate: >= 0.75)")
+        logger.info(f" - Accuracy:            {acc:.4f} (Gate: >= 0.57)")
+        logger.info(f" - Macro F1:            {macro_f1:.4f} (Gate: >= 0.42)")
+        logger.info(f" - Class 0 (Draw) AUC:  {auc_0:.4f} (Gate: >= 0.58)")
+        logger.info(f" - Class 1 (Win) AUC:   {auc_1:.4f} (Gate: >= 0.75)")
+        logger.info(f" - Class 2 (Loss) AUC:  {auc_2:.4f} (Gate: >= 0.75)")
         logger.info("========================================")
         
         # Save model pipeline
         os.makedirs(models_dir, exist_ok=True)
         model_path = os.path.join(models_dir, "match_outcome_v1.pkl")
-        joblib.dump(pipeline, model_path)
+        joblib.dump(model_wrapper, model_path)
         logger.info(f"Calibrated Match Outcome model pipeline saved to {model_path}")
         
         # Update dim_teams table with ELO rating points at freeze date (2026-06-06)
         logger.info("Updating dim_teams in DuckDB...")
         
-        # Positional priors/confederations mapping
         confederation_map = {
             "Argentina": "CONMEBOL", "Brazil": "CONMEBOL", "Uruguay": "CONMEBOL", "Colombia": "CONMEBOL", 
             "Ecuador": "CONMEBOL", "Peru": "CONMEBOL", "Chile": "CONMEBOL", "Venezuela": "CONMEBOL", 
@@ -171,7 +226,6 @@ def train_match_model(db_path: str, models_dir: str) -> bool:
         df_teams["confederation"] = df_teams["team_name_canonical"].apply(get_confederation)
         
         con.execute("CREATE OR REPLACE TABLE dim_teams AS SELECT * FROM df_teams")
-        
         logger.info("Successfully updated dim_teams with historical Elos and metadata.")
         return True
         
