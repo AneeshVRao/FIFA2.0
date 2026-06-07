@@ -23,6 +23,7 @@ export default function XGSandbox() {
   const [bodyPart, setBodyPart] = useState('right_foot');
   const [defenders, setDefenders] = useState(1);
   const [pressure, setPressure] = useState(2.0);
+  const [heatmapMode, setHeatmapMode] = useState(false); // PRD Section 13.3 Heatmap state
 
   const pitchRef = useRef(null);
   const isDragging = useRef(false);
@@ -134,9 +135,29 @@ export default function XGSandbox() {
           <h1 className="text-4xl md:text-5xl font-display font-extrabold text-white tracking-tight leading-none">
             Expected Goals (xG) Sandbox
           </h1>
-          <p className="text-sm text-slate-400 mt-2 max-w-xl">
+          <p className="text-sm text-slate-400 mt-2 max-w-xl font-sans">
             Drag the match ball across the attacking third to evaluate spatial metrics and examine SHAP attribution forces in real-time.
           </p>
+        </div>
+
+        {/* Heatmap Toggle (PRD Section 13.3) */}
+        <div className="flex bg-white/5 p-1 rounded-full border border-white/10 select-none">
+          <button
+            onClick={() => setHeatmapMode(false)}
+            className={`px-5 py-2 rounded-full text-xs font-display font-medium tracking-wide uppercase transition-all ${
+              !heatmapMode ? 'bg-fifagold text-[#050505] font-bold' : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            Live Pointer
+          </button>
+          <button
+            onClick={() => setHeatmapMode(true)}
+            className={`px-5 py-2 rounded-full text-xs font-display font-medium tracking-wide uppercase transition-all ${
+              heatmapMode ? 'bg-fifagold text-[#050505] font-bold' : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            xG Heatmap Mode
+          </button>
         </div>
       </div>
 
@@ -165,7 +186,6 @@ export default function XGSandbox() {
             <div className="absolute top-0 bottom-0 left-0 w-0 border-r-2 border-white/10 pointer-events-none"></div>
 
             {/* Penalty Box (Right Side) */}
-            {/* Standard Penalty Box is 18 yards out (roughly 16.5m) which corresponds to X=84 to 100, Y=20 to 80 */}
             <div className="absolute top-[18%] bottom-[18%] right-0 w-[30%] border-y-2 border-l-2 border-white/20 pointer-events-none bg-white/[0.01]"></div>
 
             {/* 6-Yard Box */}
@@ -177,8 +197,23 @@ export default function XGSandbox() {
             {/* Goal Posts Outline (Right side) */}
             <div className="absolute top-[36.8%] bottom-[36.8%] right-0 w-2 bg-fifagold/80 border border-fifagold -translate-y-0.5 rounded-l pointer-events-none shadow-[0_0_15px_rgba(212,175,55,0.4)]"></div>
 
+            {/* Heatmap Overlay (PRD Section 13.3) */}
+            {heatmapMode && (
+              <svg className="absolute inset-0 w-full h-full pointer-events-none animate-fade-in">
+                <defs>
+                  <radialGradient id="xg-heatmap" cx="100%" cy="50%" r="55%">
+                    <stop offset="0%" stopColor="rgba(239, 68, 68, 0.45)" />     {/* red hot goalmouth */}
+                    <stop offset="12%" stopColor="rgba(245, 158, 11, 0.35)" />    {/* amber medium 6-yard */}
+                    <stop offset="35%" stopColor="rgba(16, 185, 129, 0.15)" />    {/* green cool penalty box */}
+                    <stop offset="70%" stopColor="rgba(16, 185, 129, 0.0)" />     {/* zero threat */}
+                  </radialGradient>
+                </defs>
+                <rect width="100%" height="100%" fill="url(#xg-heatmap)" />
+              </svg>
+            )}
+
             {/* Defender Triangle Cones from Shot to Goal */}
-            {shotX < 100 && (
+            {!heatmapMode && shotX < 100 && (
               <svg className="absolute inset-0 w-full h-full pointer-events-none opacity-20">
                 <polygon 
                   points={`
@@ -192,16 +227,17 @@ export default function XGSandbox() {
             )}
 
             {/* Draggable Ball Indicator */}
-            {/* Maps shotX [50, 100] to left percentage [0, 100], and shotY [0, 100] to top percentage [0, 100] */}
-            <div 
-              style={{
-                left: `${((shotX - 50) / 50) * 100}%`,
-                top: `${shotY}%`,
-              }}
-              className="absolute w-8 h-8 -ml-4 -mt-4 bg-[#090b13] border-2 border-fifagold rounded-full flex items-center justify-center shadow-[0_0_15px_rgba(212,175,55,0.6)] pointer-events-none transition-all duration-75 active:scale-110 active:bg-fifagold active:text-[#090b13]"
-            >
-              <SoccerBallIcon className="w-5 h-5 text-fifagold animate-spin-slow" />
-            </div>
+            {!heatmapMode && (
+              <div 
+                style={{
+                  left: `${((shotX - 50) / 50) * 100}%`,
+                  top: `${shotY}%`,
+                }}
+                className="absolute w-8 h-8 -ml-4 -mt-4 bg-[#090b13] border-2 border-fifagold rounded-full flex items-center justify-center shadow-[0_0_15px_rgba(212,175,55,0.6)] pointer-events-none transition-all duration-75 active:scale-110 active:bg-fifagold active:text-[#090b13]"
+              >
+                <SoccerBallIcon className="w-5 h-5 text-fifagold animate-spin-slow" />
+              </div>
+            )}
           </div>
 
           <div className="flex justify-between items-center text-xs text-slate-500 font-mono">
@@ -248,7 +284,7 @@ export default function XGSandbox() {
                   </select>
                 </div>
 
-                {/* Defenders in Cone */}
+                {/* Defenders in Cone (PRD Section 13.3: 0 to 5) */}
                 <div className="space-y-1">
                   <div className="flex justify-between items-center text-[10px] uppercase font-mono text-slate-400">
                     <span>Defenders in Goal Cone</span>
@@ -257,14 +293,14 @@ export default function XGSandbox() {
                   <input
                     type="range"
                     min="0"
-                    max="6"
+                    max="5"
                     value={defenders}
                     onChange={(e) => setDefenders(parseInt(e.target.value))}
                     className="w-full accent-fifagold"
                   />
                 </div>
 
-                {/* Defensive Pressure (m) */}
+                {/* Defensive Pressure (PRD Section 13.3: 0 to 10m) */}
                 <div className="space-y-1">
                   <div className="flex justify-between items-center text-[10px] uppercase font-mono text-slate-400">
                     <span>Defensive Pressure Radius</span>
@@ -272,8 +308,8 @@ export default function XGSandbox() {
                   </div>
                   <input
                     type="range"
-                    min="0.5"
-                    max="8.0"
+                    min="0.0"
+                    max="10.0"
                     step="0.5"
                     value={pressure}
                     onChange={(e) => setPressure(parseFloat(e.target.value))}
@@ -293,9 +329,9 @@ export default function XGSandbox() {
                   <span className="text-[10px] font-mono uppercase text-slate-400">Running inference...</span>
                 </div>
               ) : error ? (
-                <div className="flex flex-col items-center justify-center py-6 gap-2 text-center">
-                  <WarningIcon className="w-6 h-6 text-red-500" />
-                  <span className="text-xs text-red-400">Failed to evaluate xG.</span>
+                <div className="flex flex-col items-center justify-center py-6 gap-2 text-center text-red-500">
+                  <WarningIcon className="w-6 h-6" />
+                  <span className="text-xs">Failed to evaluate xG.</span>
                 </div>
               ) : xgResult ? (
                 <div className="space-y-6">
@@ -305,7 +341,7 @@ export default function XGSandbox() {
                       Calibrated Expected Goals
                     </span>
                     <div className="text-5xl font-mono font-extrabold text-white tracking-tight">
-                      {(xgResult.xg_value * 100).toFixed(1)}%
+                      {xgResult.xg_value.toFixed(2)}
                     </div>
                     <div className="mt-2">
                       <span className={`inline-block border text-[10px] font-mono uppercase px-2.5 py-0.5 rounded-full ${getDangerBadgeColor(xgResult.shot_danger_class)}`}>
@@ -317,13 +353,13 @@ export default function XGSandbox() {
                   {/* Derived Spatial details */}
                   <div className="space-y-2.5 border-y border-white/5 py-4">
                     <div className="flex justify-between items-center text-xs">
-                      <span className="text-slate-400">Distance to Goal</span>
+                      <span className="text-slate-400 font-sans">Distance to Goal</span>
                       <span className="font-mono text-white font-semibold">
                         {xgResult.derived_metrics.distance_to_goal_m.toFixed(1)} m
                       </span>
                     </div>
                     <div className="flex justify-between items-center text-xs">
-                      <span className="text-slate-400">Visibility Angle</span>
+                      <span className="text-slate-400 font-sans">Visibility Angle</span>
                       <span className="font-mono text-white font-semibold">
                         {xgResult.derived_metrics.angle_to_goal_deg.toFixed(1)}°
                       </span>

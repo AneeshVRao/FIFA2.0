@@ -18,13 +18,20 @@ const postFetcher = (url, body) =>
     return res.json();
   });
 
-export default function MatchPredictor() {
+export default function MatchPredictor({ selectedMatchId, setSelectedMatchId }) {
   const { data: teamsData } = useSWR('/predictions/teams', fetcher);
   const { data: venuesData } = useSWR('/predictions/venues', fetcher);
   const { data: matchesData } = useSWR('/predictions/matches', fetcher);
 
-  const [selectedMatchId, setSelectedMatchId] = useState('match_1');
   const [customMode, setCustomMode] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(true); // Feature Breakdown Sidebar state
+
+  // Auto-exit custom sandbox when a specific schedule match is navigated to
+  useEffect(() => {
+    if (selectedMatchId) {
+      setCustomMode(false);
+    }
+  }, [selectedMatchId]);
 
   // Custom Match state
   const [teamAId, setTeamAId] = useState('T-83'); // USA
@@ -71,7 +78,7 @@ export default function MatchPredictor() {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
         <div className="w-12 h-12 rounded-full border-t-2 border-fifagold animate-spin"></div>
-        <p className="font-mono text-xs text-slate-400 uppercase tracking-widest">
+        <p className="font-mono text-xs text-slate-400 uppercase tracking-widest animate-pulse">
           Loading prediction matrices...
         </p>
       </div>
@@ -79,7 +86,6 @@ export default function MatchPredictor() {
   }
 
   const activeData = customMode ? customData : matchData;
-  const currentMatch = !customMode ? matchesData.matches.find((m) => m.match_id === selectedMatchId) : null;
 
   // Pie chart data
   const pieData = activeData
@@ -90,10 +96,8 @@ export default function MatchPredictor() {
       ]
     : [];
 
-  // Convert probability to decimal odds with slight perturbation to mock Pinnacle consensus
   const getImpliedOdds = (p) => (p > 0 ? (1 / p).toFixed(2) : '0.00');
   const getPinnacleOdds = (p, bias) => {
-    // slightly adjust implied odds to show realistic bookmaker margins
     const odds = 1 / (p * 1.03); // add 3% bookmaker margin
     return (odds * bias).toFixed(2);
   };
@@ -106,7 +110,7 @@ export default function MatchPredictor() {
           <h1 className="text-4xl md:text-5xl font-display font-extrabold text-white tracking-tight leading-none">
             Match Predictor
           </h1>
-          <p className="text-sm text-slate-400 mt-2 max-w-xl">
+          <p className="text-sm text-slate-400 mt-2 max-w-xl font-sans">
             Compare official schedule simulations against bookmaker consensus or run custom matchups in the Dixon-Coles simulator.
           </p>
         </div>
@@ -227,7 +231,7 @@ export default function MatchPredictor() {
       {customMode && customLoading ? (
         <div className="flex flex-col items-center justify-center min-h-[40vh] gap-4">
           <div className="w-8 h-8 rounded-full border-t-2 border-fifagold animate-spin"></div>
-          <p className="font-mono text-xs text-slate-400 uppercase tracking-widest">
+          <p className="font-mono text-xs text-slate-400 uppercase tracking-widest animate-pulse">
             Recalculating Dixon-Coles goal expectation grids...
           </p>
         </div>
@@ -240,7 +244,7 @@ export default function MatchPredictor() {
                 <span className="text-xs font-mono uppercase text-fifagold tracking-wider">
                   Dixon-Coles Matchup Probability
                 </span>
-                <span className="text-[10px] uppercase font-mono text-slate-400 px-2 py-0.5 rounded border border-white/10 bg-white/5">
+                <span className="text-[10px] uppercase font-mono text-slate-400 px-2 py-0.5 rounded border border-white/10 bg-white/5 font-bold">
                   {activeData.stage.toUpperCase()}
                 </span>
               </div>
@@ -330,7 +334,7 @@ export default function MatchPredictor() {
                   {activeData.top_scorelines.map((s, idx) => (
                     <div key={s.scoreline} className="flex justify-between items-center p-2.5 bg-white/[0.02] border border-white/5 rounded-xl">
                       <div className="flex items-center gap-3">
-                        <span className="w-5 h-5 rounded-full bg-white/5 text-[10px] font-mono text-slate-400 flex items-center justify-center">
+                        <span className="w-5 h-5 rounded-full bg-white/5 text-[10px] font-mono text-slate-400 flex items-center justify-center border border-white/5">
                           {idx + 1}
                         </span>
                         <span className="text-sm font-mono font-bold text-white">{s.scoreline}</span>
@@ -344,83 +348,102 @@ export default function MatchPredictor() {
               </div>
             </div>
 
-            {/* Pinnacle Odds Comparison */}
+            {/* Bookmaker Odds Comparison (PRD Section 13.2) */}
             <div className="doppelrand-card">
               <div className="doppelrand-inner space-y-4">
-                <h3 className="text-base font-display font-semibold text-white">Consensus Pinnacle Odds</h3>
-                <div className="grid grid-cols-3 gap-2">
+                <h3 className="text-base font-display font-semibold text-white">Odds Comparison (GoalIQ vs Pinnacle)</h3>
+                <div className="space-y-2.5">
+                  {/* Headers */}
+                  <div className="grid grid-cols-3 text-[9px] uppercase font-mono text-slate-500 text-center">
+                    <div>Outcome</div>
+                    <div>GoalIQ (Implied)</div>
+                    <div>Pinnacle</div>
+                  </div>
+                  
                   {/* Home Win */}
-                  <div className="bg-white/[0.02] border border-white/5 rounded-xl p-3 text-center">
-                    <div className="text-[10px] uppercase font-mono text-slate-400">1 (Home)</div>
-                    <div className="text-base font-mono font-bold text-fifagreen mt-1">
-                      {getPinnacleOdds(activeData.probabilities.home_win, 0.99)}
-                    </div>
-                    <div className="text-[8px] text-slate-500 font-mono mt-0.5">Implied: {getImpliedOdds(activeData.probabilities.home_win)}</div>
+                  <div className="grid grid-cols-3 text-center items-center py-2 border-b border-white/5 text-xs">
+                    <span className="font-display font-bold text-white text-left pl-2">Home Win</span>
+                    <span className="font-mono text-fifagreen font-semibold">{getImpliedOdds(activeData.probabilities.home_win)}</span>
+                    <span className="font-mono text-fifagreen font-bold">{getPinnacleOdds(activeData.probabilities.home_win, 0.99)}</span>
                   </div>
 
                   {/* Draw */}
-                  <div className="bg-white/[0.02] border border-white/5 rounded-xl p-3 text-center">
-                    <div className="text-[10px] uppercase font-mono text-slate-400">X (Draw)</div>
-                    <div className="text-base font-mono font-bold text-slate-300 mt-1">
-                      {getPinnacleOdds(activeData.probabilities.draw, 1.01)}
-                    </div>
-                    <div className="text-[8px] text-slate-500 font-mono mt-0.5">Implied: {getImpliedOdds(activeData.probabilities.draw)}</div>
+                  <div className="grid grid-cols-3 text-center items-center py-2 border-b border-white/5 text-xs">
+                    <span className="font-display font-bold text-white text-left pl-2">Draw</span>
+                    <span className="font-mono text-slate-300 font-semibold">{getImpliedOdds(activeData.probabilities.draw)}</span>
+                    <span className="font-mono text-slate-300 font-bold">{getPinnacleOdds(activeData.probabilities.draw, 1.01)}</span>
                   </div>
 
                   {/* Away Win */}
-                  <div className="bg-white/[0.02] border border-white/5 rounded-xl p-3 text-center">
-                    <div className="text-[10px] uppercase font-mono text-slate-400">2 (Away)</div>
-                    <div className="text-base font-mono font-bold text-fifagold mt-1">
-                      {getPinnacleOdds(activeData.probabilities.away_win, 0.98)}
-                    </div>
-                    <div className="text-[8px] text-slate-500 font-mono mt-0.5">Implied: {getImpliedOdds(activeData.probabilities.away_win)}</div>
+                  <div className="grid grid-cols-3 text-center items-center py-2 text-xs">
+                    <span className="font-display font-bold text-white text-left pl-2">Away Win</span>
+                    <span className="font-mono text-fifagold font-semibold">{getImpliedOdds(activeData.probabilities.away_win)}</span>
+                    <span className="font-mono text-fifagold font-bold">{getPinnacleOdds(activeData.probabilities.away_win, 0.98)}</span>
                   </div>
                 </div>
               </div>
             </div>
 
-            {/* Influence Features details */}
+            {/* PRD Section 13.2: Expandable Feature Breakdown Sidebar */}
             <div className="doppelrand-card">
               <div className="doppelrand-inner space-y-4">
-                <h3 className="text-base font-display font-semibold text-white">Spatial Influence Factors</h3>
+                <button 
+                  onClick={() => setSidebarOpen(!sidebarOpen)}
+                  className="flex justify-between items-center w-full text-base font-display font-semibold text-white focus:outline-none cursor-pointer"
+                >
+                  <span>Feature Breakdown Sidebar</span>
+                  <span className="text-xs text-fifagold font-mono">{sidebarOpen ? 'COLLAPSE' : 'EXPAND'}</span>
+                </button>
                 
-                <div className="space-y-3">
-                  {/* Elo Difference */}
-                  <div className="flex justify-between items-center border-b border-white/5 pb-2">
-                    <span className="text-xs text-slate-400">Elo Differential</span>
-                    <span className={`text-xs font-mono font-bold ${activeData.influence_features.elo_differential >= 0 ? 'text-fifagreen' : 'text-red-500'}`}>
-                      {activeData.influence_features.elo_differential >= 0 ? '+' : ''}
-                      {activeData.influence_features.elo_differential.toFixed(0)} points
-                    </span>
-                  </div>
-
-                  {/* Market Value Difference */}
-                  <div className="flex justify-between items-center border-b border-white/5 pb-2">
-                    <span className="text-xs text-slate-400">Squad Value Diff</span>
-                    <span className={`text-xs font-mono font-bold ${activeData.influence_features.squad_value_diff_eur >= 0 ? 'text-fifagreen' : 'text-red-500'}`}>
-                      {activeData.influence_features.squad_value_diff_eur >= 0 ? '+' : ''}
-                      {(activeData.influence_features.squad_value_diff_eur / 1e6).toFixed(1)}M €
-                    </span>
-                  </div>
-
-                  {/* Altitude */}
-                  <div className="flex justify-between items-center border-b border-white/5 pb-2">
-                    <div className="flex items-center gap-1.5 text-xs text-slate-400">
-                      <AltitudeIcon className="w-3.5 h-3.5 text-fifagold" /> Venue Altitude
+                {sidebarOpen && (
+                  <div className="space-y-3 pt-2 border-t border-white/5 animate-fade-in">
+                    {/* Elo Differential */}
+                    <div className="flex justify-between items-center border-b border-white/5 pb-2">
+                      <span className="text-xs text-slate-400">Elo Gap</span>
+                      <span className={`text-xs font-mono font-bold ${activeData.influence_features.elo_differential >= 0 ? 'text-fifagreen' : 'text-red-500'}`}>
+                        {activeData.influence_features.elo_differential >= 0 ? '+' : ''}
+                        {activeData.influence_features.elo_differential.toFixed(0)} points
+                      </span>
                     </div>
-                    <span className="text-xs font-mono font-bold text-white">
-                      {activeData.influence_features.altitude_m.toFixed(0)}m
-                    </span>
-                  </div>
 
-                  {/* Host Advantage */}
-                  <div className="flex justify-between items-center">
-                    <span className="text-xs text-slate-400">Host Advantage</span>
-                    <span className={`text-xs font-mono font-bold ${activeData.influence_features.host_advantage_applied ? 'text-fifagold' : 'text-slate-500'}`}>
-                      {activeData.influence_features.host_advantage_applied ? 'APPLIED (1.25x goals)' : 'NONE'}
-                    </span>
+                    {/* Squad Value Differential */}
+                    <div className="flex justify-between items-center border-b border-white/5 pb-2">
+                      <span className="text-xs text-slate-400">Squad Value Diff</span>
+                      <span className={`text-xs font-mono font-bold ${activeData.influence_features.squad_value_diff_eur >= 0 ? 'text-fifagreen' : 'text-red-500'}`}>
+                        {activeData.influence_features.squad_value_diff_eur >= 0 ? '+' : ''}
+                        {(activeData.influence_features.squad_value_diff_eur / 1e6).toFixed(1)}M €
+                      </span>
+                    </div>
+
+                    {/* Altitude */}
+                    <div className="flex justify-between items-center border-b border-white/5 pb-2">
+                      <div className="flex items-center gap-1.5 text-xs text-slate-400">
+                        <AltitudeIcon className="w-3.5 h-3.5 text-fifagold" /> Venue Altitude
+                      </div>
+                      <span className="text-xs font-mono font-bold text-white">
+                        {activeData.influence_features.altitude_m.toFixed(0)}m
+                      </span>
+                    </div>
+
+                    {/* Travel Distance */}
+                    <div className="flex justify-between items-center border-b border-white/5 pb-2">
+                      <div className="flex items-center gap-1.5 text-xs text-slate-400">
+                        <TravelIcon className="w-3.5 h-3.5 text-fifagold" /> Travel Distance
+                      </div>
+                      <span className="text-xs font-mono font-bold text-white">
+                        {activeData.influence_features.travel_distance_km.toFixed(0)} km
+                      </span>
+                    </div>
+
+                    {/* Host Advantage */}
+                    <div className="flex justify-between items-center">
+                      <span className="text-xs text-slate-400">Host Advantage</span>
+                      <span className={`text-xs font-mono font-bold ${activeData.influence_features.host_advantage_applied ? 'text-fifagold' : 'text-slate-500'}`}>
+                        {activeData.influence_features.host_advantage_applied ? 'APPLIED (1.25x goals)' : 'NONE'}
+                      </span>
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
             </div>
           </div>

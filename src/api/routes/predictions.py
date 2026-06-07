@@ -171,6 +171,7 @@ async def get_winner_probabilities():
             SELECT 
                 p.reep_team_id,
                 t.team_name_canonical AS team_name,
+                t.confederation,
                 p.p_group_advance,
                 p.p_r32,
                 p.p_r16,
@@ -249,6 +250,7 @@ async def get_match_prediction(match_id: str):
             elo_differential=elo_diff,
             squad_value_diff_eur=val_diff,
             altitude_m=m_info["altitude_m"],
+            travel_distance_km=450.0,
             host_advantage_applied=is_host_applied
         )
 
@@ -427,6 +429,7 @@ async def generate_custom_prediction(req: CustomMatchRequest):
             elo_differential=elo_diff,
             squad_value_diff_eur=val_diff,
             altitude_m=float(venue["altitude_m"]),
+            travel_distance_km=520.0,
             host_advantage_applied=is_host_applied
         )
         

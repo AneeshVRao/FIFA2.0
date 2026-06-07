@@ -18,6 +18,7 @@ class BaseResponseModel(BaseModel):
 class TeamStageProbability(BaseModel):
     reep_team_id: str
     team_name: str
+    confederation: str
     p_group_advance: float
     p_r32: float
     p_r16: float
@@ -56,6 +57,7 @@ class InfluenceFeatures(BaseModel):
     elo_differential: float
     squad_value_diff_eur: float
     altitude_m: float
+    travel_distance_km: float = 0.0
     host_advantage_applied: bool
 
 class MatchPredictionResponse(BaseResponseModel):
@@ -130,6 +132,9 @@ class GoldenBootCandidate(BaseModel):
     reep_player_id: str
     player_name: str
     team_name: str
+    position: str = "Unknown"
+    caps: int = 0
+    bayesian_penalty_conversion: float = 0.0
     mean_goals: float
     p50_goals: float
     p90_goals: float

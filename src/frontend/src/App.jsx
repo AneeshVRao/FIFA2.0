@@ -10,13 +10,26 @@ import { TrophyIcon, SoccerBallIcon, StadiumIcon, TravelIcon, AltitudeIcon } fro
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
+  const [selectedMatchId, setSelectedMatchId] = useState('match_1');
 
   const renderActivePage = () => {
     switch (activeTab) {
       case 'dashboard':
-        return <Dashboard />;
+        return (
+          <Dashboard 
+            onSelectMatch={(matchId) => {
+              setSelectedMatchId(matchId);
+              setActiveTab('predictor');
+            }} 
+          />
+        );
       case 'predictor':
-        return <MatchPredictor />;
+        return (
+          <MatchPredictor 
+            selectedMatchId={selectedMatchId} 
+            setSelectedMatchId={setSelectedMatchId} 
+          />
+        );
       case 'xg':
         return <XGSandbox />;
       case 'penalty':
