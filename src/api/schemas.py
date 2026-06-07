@@ -176,3 +176,45 @@ class HealthResponse(BaseModel):
     models_ready: ModelLoadingStatus
     simulation_status: str
     prediction_freeze_date: str = "2026-06-06"
+
+# 9. List Data Schemas
+class TeamListItem(BaseModel):
+    reep_team_id: str
+    team_name_canonical: str
+    group_code: Optional[str]
+    is_host_nation: bool
+    pretournament_elo: float
+    squad_market_value_eur: float
+    confederation: str
+
+class TeamsListResponse(BaseResponseModel):
+    teams: List[TeamListItem]
+
+class VenueListItem(BaseModel):
+    venue_id: str
+    stadium_name: str
+    city: str
+    host_nation: str
+    latitude: float
+    longitude: float
+    altitude_m: float
+    capacity: int
+
+class VenuesListResponse(BaseResponseModel):
+    venues: List[VenueListItem]
+
+class MatchListItem(BaseModel):
+    match_id: str
+    stage: str
+    group_code: Optional[str]
+    team_a_id: str
+    team_a_name: str
+    team_b_id: str
+    team_b_name: str
+    venue_id: str
+    venue_name: str
+    altitude_m: float
+
+class MatchesListResponse(BaseResponseModel):
+    matches: List[MatchListItem]
+

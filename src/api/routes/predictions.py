@@ -5,7 +5,9 @@ from typing import List, Dict, Any
 from src.api.schemas import (
     WinnerResponse, TeamStageProbability,
     MatchPredictionResponse, TeamRef, VenueRef, MatchProbabilities,
-    ExpectedGoals, ScorelineProb, InfluenceFeatures, CustomMatchRequest
+    ExpectedGoals, ScorelineProb, InfluenceFeatures, CustomMatchRequest,
+    TeamsListResponse, TeamListItem, VenuesListResponse, VenueListItem,
+    MatchesListResponse, MatchListItem
 )
 from src.api.database import get_db_connection
 from src.simulation.dixon_coles import get_match_xg, build_scoreline_grid
@@ -116,6 +118,47 @@ def load_static_schedule() -> Dict[str, Dict[str, Any]]:
     return schedule
 
 STATIC_SCHEDULE = load_static_schedule()
+
+@router.get("/teams", response_model=TeamsListResponse)
+async def get_teams():
+    with get_db_connection() as conn:
+        try:
+            df = conn.execute("SELECT reep_team_id, team_name_canonical, group_code, is_host_nation, pretournament_elo, squad_market_value_eur, confederation FROM dim_teams ORDER BY team_name_canonical").fetchdf()
+            teams = [TeamListItem(**row) for row in df.to_dict(orient="records")]
+            return TeamsListResponse(teams=teams)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Database query failed: {str(e)}")
+
+@router.get("/venues", response_model=VenuesListResponse)
+async def get_venues():
+    with get_db_connection() as conn:
+        try:
+            df = conn.execute("SELECT venue_id, stadium_name, city, host_nation, latitude, longitude, altitude_m, capacity FROM dim_venues ORDER BY stadium_name").fetchdf()
+            venues = [VenueListItem(**row) for row in df.to_dict(orient="records")]
+            return VenuesListResponse(venues=venues)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Database query failed: {str(e)}")
+
+@router.get("/matches", response_model=MatchesListResponse)
+async def get_matches():
+    try:
+        matches = []
+        for m_num, m_info in sorted(STATIC_SCHEDULE.items(), key=lambda x: int(x[0])):
+            matches.append(MatchListItem(
+                match_id=m_info["match_id"],
+                stage=m_info["stage"],
+                group_code=m_info["group_code"],
+                team_a_id=m_info["team_a_id"],
+                team_a_name=m_info["team_a_name"],
+                team_b_id=m_info["team_b_id"],
+                team_b_name=m_info["team_b_name"],
+                venue_id=m_info["venue_id"],
+                venue_name=m_info["venue_name"],
+                altitude_m=m_info["altitude_m"]
+            ))
+        return MatchesListResponse(matches=matches)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to generate matches list: {str(e)}")
 
 @router.get("/winner", response_model=WinnerResponse)
 async def get_winner_probabilities():

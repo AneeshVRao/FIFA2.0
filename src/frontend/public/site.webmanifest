@@ -1,0 +1,15 @@
+{
+  "name": "GoalIQ FIFA World Cup 2026 Prediction Platform",
+  "short_name": "GoalIQ",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ],
+  "theme_color": "#050505",
+  "background_color": "#050505",
+  "display": "standalone",
+  "start_url": "/"
+}
