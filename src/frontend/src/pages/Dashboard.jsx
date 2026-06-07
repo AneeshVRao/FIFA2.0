@@ -81,6 +81,77 @@ export default function Dashboard({ onSelectMatch }) {
 
   const resolvedVenue = venuesData.venues.find((v) => v.venue_id === selectedVenueId);
 
+  const getFlightPath = (venueId) => {
+    const pairs = {
+      v_mexicocity: 'v_losangeles',
+      v_guadalajara: 'v_mexicocity',
+      v_monterrey: 'v_dallas',
+      v_losangeles: 'v_sanfrancisco',
+      v_sanfrancisco: 'v_seattle',
+      v_seattle: 'v_vancouver',
+      v_vancouver: 'v_toronto',
+      v_toronto: 'v_boston',
+      v_boston: 'v_newyork',
+      v_newyork: 'v_philadelphia',
+      v_philadelphia: 'v_atlanta',
+      v_atlanta: 'v_miami',
+      v_miami: 'v_houston',
+      v_houston: 'v_dallas',
+      v_dallas: 'v_kansascity',
+      v_kansascity: 'v_toronto',
+    };
+    
+    const startId = pairs[venueId] || 'v_newyork';
+    
+    const dists = {
+      v_mexicocity: 2420,
+      v_guadalajara: 460,
+      v_monterrey: 920,
+      v_losangeles: 550,
+      v_sanfrancisco: 1100,
+      v_seattle: 230,
+      v_vancouver: 3350,
+      v_toronto: 900,
+      v_boston: 300,
+      v_newyork: 150,
+      v_philadelphia: 1050,
+      v_atlanta: 980,
+      v_miami: 1550,
+      v_houston: 380,
+      v_dallas: 780,
+      v_kansascity: 1850,
+    };
+    
+    const alts = {
+      v_mexicocity: 2240,
+      v_guadalajara: 1560,
+      v_monterrey: 535,
+      v_losangeles: 40,
+      v_sanfrancisco: 12,
+      v_seattle: 4,
+      v_vancouver: 5,
+      v_toronto: 76,
+      v_boston: 85,
+      v_newyork: 10,
+      v_philadelphia: 5,
+      v_atlanta: 315,
+      v_miami: 3,
+      v_houston: 15,
+      v_dallas: 180,
+      v_kansascity: 275,
+    };
+
+    const startAlt = alts[startId] || 0;
+    const endAlt = alts[venueId] || 0;
+
+    return {
+      start: { id: startId },
+      end: { id: venueId },
+      distance_km: dists[venueId] || 1000,
+      altitude_diff_m: Math.abs(endAlt - startAlt)
+    };
+  };
+
   return (
     <div className="space-y-12 animate-fade-in py-6">
       {/* Hero Header Section */}
@@ -165,6 +236,7 @@ export default function Dashboard({ onSelectMatch }) {
           <BroadcastMap
             selectedVenueId={selectedVenueId}
             onSelectVenue={(vid) => setSelectedVenueId(vid)}
+            flightPath={getFlightPath(selectedVenueId)}
           />
         </div>
 

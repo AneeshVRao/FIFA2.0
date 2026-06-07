@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Canvas } from '@react-three/fiber';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { Canvas, useFrame } from '@react-three/fiber';
 import { OrbitControls, Line } from '@react-three/drei';
 import * as THREE from 'three';
 import { TravelIcon, AltitudeIcon } from './Icons';
@@ -16,6 +16,86 @@ function latLonToVector3(lat, lon, radius = GLOBE_RADIUS) {
   const z = radius * Math.sin(phi) * Math.cos(theta);
   
   return new THREE.Vector3(x, y, z);
+}
+
+// Procedural World Map boundary detector
+function isLand(lat, lon) {
+  // North America
+  if (lat > 12 && lat < 75 && lon > -170 && lon < -50) return true;
+  // South America
+  if (lat > -56 && lat <= 12 && lon > -90 && lon < -34) return true;
+  // Africa
+  if (lat > -35 && lat < 37 && lon > -20 && lon < 52) return true;
+  // Europe
+  if (lat > 35 && lat < 72 && lon > -25 && lon < 45) return true;
+  // Asia
+  if (lat > 5 && lat < 75 && lon >= 45 && lon < 180) return true;
+  // Australia
+  if (lat > -45 && lat < -10 && lon > 110 && lon < 155) return true;
+  // Greenland
+  if (lat >= 60 && lat < 85 && lon > -75 && lon < -15) return true;
+  // Antarctica
+  if (lat < -60) return true;
+  return false;
+}
+
+// Procedural Dotted World Map particles
+function DottedGlobe() {
+  const pointsGeometry = useMemo(() => {
+    const positions = [];
+    // Distribute points uniformly on sphere and filter by landmass boundaries
+    for (let i = 0; i < 22000; i++) {
+      const lon = Math.random() * 360 - 180;
+      const lat = Math.asin(Math.random() * 2 - 1) * (180 / Math.PI);
+      if (isLand(lat, lon)) {
+        const vec = latLonToVector3(lat, lon, GLOBE_RADIUS + 0.01);
+        positions.push(vec.x, vec.y, vec.z);
+      }
+    }
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    return geometry;
+  }, []);
+
+  return (
+    <points geometry={pointsGeometry}>
+      <pointsMaterial 
+        color="#d4af37" 
+        size={0.065} 
+        sizeAttenuation={true} 
+        transparent 
+        opacity={0.35} 
+      />
+    </points>
+  );
+}
+
+// Moving animated glowing pulse along travel flight path
+function TravelPulse({ start, end }) {
+  const startVec = latLonToVector3(start.lat, start.lon, GLOBE_RADIUS + 0.06);
+  const endVec = latLonToVector3(end.lat, end.lon, GLOBE_RADIUS + 0.06);
+  
+  const midVec = new THREE.Vector3().addVectors(startVec, endVec).multiplyScalar(0.5);
+  const dist = startVec.distanceTo(endVec);
+  midVec.normalize().multiplyScalar(GLOBE_RADIUS + 0.2 + dist * 0.15); // curved height
+  
+  const curve = useMemo(() => new THREE.QuadraticBezierCurve3(startVec, midVec, endVec), [start, end]);
+  const pulseRef = useRef();
+  
+  useFrame((state) => {
+    const t = (state.clock.getElapsedTime() * 0.45) % 1.0; // loops every ~2.2 seconds
+    if (pulseRef.current) {
+      const pos = curve.getPointAt(t);
+      pulseRef.current.position.copy(pos);
+    }
+  });
+  
+  return (
+    <mesh ref={pulseRef}>
+      <sphereGeometry args={[0.075, 8, 8]} />
+      <meshBasicMaterial color="hsl(140, 100%, 50%)" />
+    </mesh>
+  );
 }
 
 // 16 Official Venue GPS coordinates
@@ -47,13 +127,16 @@ function GlobePins({ selectedVenueId, onSelectVenue, flightPath }) {
       {/* 3D Sphere Globe representing North America Earth */}
       <mesh receiveShadow>
         <sphereGeometry args={[GLOBE_RADIUS, 64, 64]} />
-        <meshStandardMaterial color="#0b0d19" roughness={0.85} metalness={0.1} />
+        <meshStandardMaterial color="#05060b" roughness={0.9} metalness={0.2} />
       </mesh>
+
+      {/* Procedural Dotted World Map */}
+      <DottedGlobe />
       
-      {/* Wireframe Outline to give it a tech vibe */}
+      {/* Wireframe Outline for high-tech look */}
       <mesh>
-        <sphereGeometry args={[GLOBE_RADIUS + 0.02, 32, 32]} />
-        <meshBasicMaterial color="#ffffff" wireframe transparent opacity={0.03} />
+        <sphereGeometry args={[GLOBE_RADIUS + 0.02, 24, 24]} />
+        <meshBasicMaterial color="#d4af37" wireframe transparent opacity={0.07} />
       </mesh>
 
       {/* Render 16 Venue Pins */}
@@ -90,7 +173,10 @@ function GlobePins({ selectedVenueId, onSelectVenue, flightPath }) {
 
       {/* Render Travel flight path Bezier line if active */}
       {flightPath && (
-        <FlightPathLine start={flightPath.start} end={flightPath.end} />
+        <>
+          <FlightPathLine start={flightPath.start} end={flightPath.end} />
+          <TravelPulse start={flightPath.start} end={flightPath.end} />
+        </>
       )}
     </group>
   );
