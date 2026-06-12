@@ -9,6 +9,7 @@ from multiprocessing import Pool
 from typing import Dict, List, Tuple, Any
 from src.simulation.tournament import simulate_group_stage, calculate_standings, advance_third_place_teams, assign_r32_pairings, simulate_knockout_stage
 from src.simulation.shootout_sim import get_shootout_roster
+from src.data.live_ingestion import fetch_injury_risk
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s]: %(message)s")
 logger = logging.getLogger("simulation_runner")
@@ -35,7 +36,8 @@ def simulate_single_tournament(
     seed: int,
     group_assignments: Dict[str, List[Dict[str, Any]]],
     venues: List[Dict[str, Any]],
-    player_dict: Dict[str, List[Dict[str, Any]]]
+    player_dict: Dict[str, List[Dict[str, Any]]],
+    actual_matches: Dict[str, Dict[str, int]] = None
 ) -> Dict[str, Any]:
     """
     Simulates a single complete 2026 World Cup tournament.
@@ -45,7 +47,7 @@ def simulate_single_tournament(
     random.seed(seed)
     
     # 1. Group Stage
-    group_matches, team_states = simulate_group_stage(group_assignments, venues, None)
+    group_matches, team_states = simulate_group_stage(group_assignments, venues, actual_matches)
     
     # 2. Standings & Tiebreakers
     standings = calculate_standings(group_matches, team_states)
@@ -118,10 +120,10 @@ def simulate_single_tournament(
 
 def run_simulation_batch(args) -> List[Dict[str, Any]]:
     """Runs a batch of simulations sequentially within a process."""
-    batch_size, start_seed, group_assignments, venues, player_dict = args
+    batch_size, start_seed, group_assignments, venues, player_dict, actual_matches = args
     results = []
     for i in range(batch_size):
-        results.append(simulate_single_tournament(start_seed + i, group_assignments, venues, player_dict))
+        results.append(simulate_single_tournament(start_seed + i, group_assignments, venues, player_dict, actual_matches))
     return results
 
 def main():
@@ -167,7 +169,34 @@ def main():
         tname = team_id_to_name.get(p["reep_team_id"], "Unknown")
         player_dict.setdefault(tname, []).append(p)
         
+    # Load actual completed matches from DB
+    df_actual = con.execute('SELECT match_id, goals_a, goals_b FROM fct_matches WHERE goals_a IS NOT NULL').fetchdf()
+    actual_matches = {}
+    for _, row in df_actual.iterrows():
+        actual_matches[row["match_id"]] = {"goals_a": int(row["goals_a"]), "goals_b": int(row["goals_b"])}
+    
     con.close()
+    
+    # Dynamic Team Strength Updates (Fatigue Penalty)
+    # Fetch injury risks via Football Intelligence Hub
+    api_key = os.getenv("APIFY_API_TOKEN", "apify_api_sxiDqx2ZWJEGMLb2N3MSTsdai0c30x3nl0lN_placeholder")
+    injury_risks = fetch_injury_risk(api_key)
+    
+    # Penalize team pre-tournament Elo based on key player fatigue/injury
+    for group_teams in group_assignments.values():
+        for team in group_teams:
+            tname = team["team_name_canonical"]
+            # Sum up injury risk for this team's players
+            team_risk = 0.0
+            for p in player_dict.get(tname, []):
+                pid = p["reep_player_id"]
+                if pid in injury_risks:
+                    team_risk += injury_risks[pid]
+            # Example logic: reduce Elo by 0.5 per point of cumulative risk 
+            # (e.g., player_1 has 85 risk -> team loses 42.5 Elo)
+            if team_risk > 0:
+                logger.info(f"Applying fatigue penalty of -{team_risk * 0.5:.1f} Elo to {tname}")
+                team["pretournament_elo"] -= (team_risk * 0.5)
     
     import sys
     n_sims = 100000
@@ -187,7 +216,7 @@ def main():
     # Multiprocessing arguments
     tasks = []
     for b in range(n_batches):
-        tasks.append((batch_size, b * batch_size, group_assignments, venues, player_dict))
+        tasks.append((batch_size, b * batch_size, group_assignments, venues, player_dict, actual_matches))
         
     logger.info(f"Running simulations in parallel using 8 CPU cores...")
     # Run in parallel
@@ -363,7 +392,7 @@ def main():
             
     # Perform deterministic simulation for Golden Boot & Bracket matching
     logger.info("Running deterministic simulation run (seed 42) to align Golden Boot and Match data...")
-    official_run = simulate_single_tournament(42, group_assignments, venues, player_dict)
+    official_run = simulate_single_tournament(42, group_assignments, venues, player_dict, actual_matches)
     
     official_team_goals = {tname: 0 for tname in team_meta_dict}
     for m in official_run["matches"]:
@@ -524,6 +553,11 @@ def main():
         if m["stage"] == "group":
             match_id = f"match_{group_idx}"
             group_idx += 1
+            
+            # Use actual results if they exist instead of simulated ones for writing back to fct_matches
+            actual_ga = actual_matches.get(match_id, {}).get("goals_a") if actual_matches else None
+            actual_gb = actual_matches.get(match_id, {}).get("goals_b") if actual_matches else None
+            
             matches_rows.append({
                 "match_id": match_id,
                 "stage": "group",
@@ -531,8 +565,8 @@ def main():
                 "team_a_name": team_a_name,
                 "team_b_id": team_b_id,
                 "team_b_name": team_b_name,
-                "goals_a": int(m["goals_a"]),
-                "goals_b": int(m["goals_b"]),
+                "goals_a": actual_ga if actual_ga is not None else None,
+                "goals_b": actual_gb if actual_gb is not None else None,
                 "went_to_extra_time": False,
                 "went_to_penalties": False,
                 "penalty_winner": None,
@@ -563,8 +597,8 @@ def main():
                 "team_a_name": team_a_name,
                 "team_b_id": team_b_id,
                 "team_b_name": team_b_name,
-                "goals_a": int(m["goals_a"]),
-                "goals_b": int(m["goals_b"]),
+                "goals_a": None,
+                "goals_b": None,
                 "went_to_extra_time": bool(m["went_to_extra_time"]),
                 "went_to_penalties": bool(m["went_to_penalties"]),
                 "penalty_winner": m["penalty_winner"],

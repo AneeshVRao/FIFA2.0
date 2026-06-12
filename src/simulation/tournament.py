@@ -42,7 +42,7 @@ R32_MATCH_MAP = [
 def simulate_group_stage(
     group_assignments: Dict[str, List[Dict[str, Any]]],
     venues: List[Dict[str, Any]],
-    con
+    actual_matches: Dict[str, Dict[str, int]] = None
 ) -> Tuple[List[Dict[str, Any]], Dict[str, Dict[str, Any]]]:
     """
     Simulates all 72 group stage matches across the 12 groups.
@@ -80,6 +80,7 @@ def simulate_group_stage(
     # We will assign venues to group stage matches. We can cycle through the 16 venues.
     venue_ids = list(venue_dict.keys())
     venue_index = 0
+    group_match_idx = 1
     
     for group_code, teams in group_assignments.items():
         team_names = [t["team_name_canonical"] for t in teams]
@@ -132,8 +133,16 @@ def simulate_group_stage(
                 rest_b=rest_b
             )
             
-            # Sample scoreline
-            goals_a, goals_b = sample_scoreline(lam, mu)
+            # Check if this match has actual results locked in
+            match_id_str = f"match_{group_match_idx}"
+            group_match_idx += 1
+            
+            if actual_matches and match_id_str in actual_matches:
+                goals_a = actual_matches[match_id_str]["goals_a"]
+                goals_b = actual_matches[match_id_str]["goals_b"]
+            else:
+                # Sample scoreline
+                goals_a, goals_b = sample_scoreline(lam, mu)
             
             # Record result
             match_results.append({

@@ -863,7 +863,7 @@ export default function BracketExplorer() {
                                                   type="number"
                                                   min="0"
                                                   max="15"
-                                                  value={score.goals_a}
+                                                  value={score.goals_a === null ? '' : score.goals_a}
                                                   onClick={(e) => e.stopPropagation()}
                                                   onChange={(e) => {
                                                     const val = e.target.value;
@@ -882,7 +882,7 @@ export default function BracketExplorer() {
                                                   type="number"
                                                   min="0"
                                                   max="15"
-                                                  value={score.goals_b}
+                                                  value={score.goals_b === null ? '' : score.goals_b}
                                                   onClick={(e) => e.stopPropagation()}
                                                   onChange={(e) => {
                                                     const val = e.target.value;

@@ -114,8 +114,8 @@ export default function App() {
       <footer className="border-t border-white/5 py-8 text-center text-[10px] font-mono text-slate-500 relative z-10">
         <div className="max-w-7xl mx-auto px-4 space-y-2">
           <div>GOALIQ · OFFICIAL FIFA WORLD CUP 2026 ANALYTICAL ENGINE</div>
-          <div className="text-slate-600">
-            COMPUTED VIA MONTE CARLO TOURNAMENT FORECAST GRIDS · VERIFIED UNDER FROZEN METADATA INDEX
+          <div className="text-[#00ff88]/70">
+            LIVE TOURNAMENT RE-SIMULATION ENGINE · INGESTING REAL-TIME FBRef EVENTS AND APIFY FATIGUE SCORES
           </div>
         </div>
       </footer>
