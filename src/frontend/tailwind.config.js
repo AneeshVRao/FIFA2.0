@@ -16,8 +16,8 @@ export default {
       },
       fontFamily: {
         sans: ["Plus Jakarta Sans", "sans-serif"],
-        display: ["Satoshi", "sans-serif"],
-        mono: ["Geist Mono", "monospace"],
+        display: ["Space Grotesk", "sans-serif"],
+        mono: ["JetBrains Mono", "monospace"],
       },
     },
   },

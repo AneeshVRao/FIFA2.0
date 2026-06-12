@@ -1,14 +1,17 @@
 import React, { useState } from 'react';
 import FreezeBanner from './components/FreezeBanner';
+import SplashScreen from './components/SplashScreen';
 import Dashboard from './pages/Dashboard';
 import MatchPredictor from './pages/MatchPredictor';
 import XGSandbox from './pages/XGSandbox';
 import PenaltySandbox from './pages/PenaltySandbox';
 import BracketExplorer from './pages/BracketExplorer';
 import GoldenBoot from './pages/GoldenBoot';
+import logoUrl from './assets/logo.svg';
 import { TrophyIcon, SoccerBallIcon, StadiumIcon, TravelIcon, AltitudeIcon } from './components/Icons';
 
 export default function App() {
+  const [showSplash, setShowSplash] = useState(true);
   const [activeTab, setActiveTab] = useState('dashboard');
   const [selectedMatchId, setSelectedMatchId] = useState('match_1');
 
@@ -53,7 +56,9 @@ export default function App() {
   ];
 
   return (
-    <div className="bg-darkbg text-slate-200 min-h-[100dvh] font-sans flex flex-col relative overflow-hidden selection:bg-fifagold/30 selection:text-white">
+    <>
+      {showSplash && <SplashScreen onComplete={() => setShowSplash(false)} />}
+      <div className="bg-darkbg text-slate-200 min-h-[100dvh] font-sans flex flex-col relative overflow-hidden selection:bg-fifagold/30 selection:text-white">
       {/* Ambient Radial Glow Orbs */}
       <div className="glow-orb-gold top-[-100px] left-[-100px]"></div>
       <div className="glow-orb-green bottom-[-100px] right-[-100px]"></div>
@@ -62,18 +67,22 @@ export default function App() {
       <FreezeBanner />
 
       {/* Fluid Glass Navigation Pill */}
-      <header className="sticky top-20 z-40 mx-auto mt-6 px-4 md:px-0 w-full max-w-4xl pointer-events-none">
-        <nav className="pointer-events-auto bg-[#090b13]/85 backdrop-blur-xl border border-white/10 rounded-full py-2 px-3 md:px-4 flex items-center justify-between shadow-[0_15px_30px_-5px_rgba(0,0,0,0.6)]">
+      <header className="sticky top-20 z-40 mx-auto mt-6 px-4 md:px-6 w-full max-w-6xl pointer-events-none">
+        <nav className="pointer-events-auto bg-[#090b13]/85 backdrop-blur-xl border border-white/10 rounded-full py-3 px-4 md:px-7 flex items-center justify-between shadow-[0_20px_40px_-10px_rgba(0,0,0,0.7)]">
           {/* Logo Brand Brand Accent */}
-          <div className="flex items-center gap-2 pl-2 cursor-pointer" onClick={() => setActiveTab('dashboard')}>
-            <TrophyIcon className="w-5 h-5 text-fifagold animate-pulse" />
-            <span className="font-display font-extrabold text-sm text-white tracking-wider uppercase">
+          <div className="flex items-center gap-3 pl-1 cursor-pointer" onClick={() => setActiveTab('dashboard')}>
+            <img 
+              src={logoUrl} 
+              className="w-6 h-8 object-contain select-none pointer-events-none filter drop-shadow-[0_0_6px_rgba(225,181,11,0.3)]" 
+              alt="FIFA 26 Logo" 
+            />
+            <span className="font-display font-black text-sm md:text-base text-white tracking-widest uppercase">
               Goal<span className="text-fifagold">IQ</span>
             </span>
           </div>
 
           {/* Navigation Links list */}
-          <div className="flex gap-1 md:gap-1.5 overflow-x-auto max-w-[70%] scrollbar-none py-1">
+          <div className="flex items-center gap-1.5 md:gap-3 overflow-x-auto scrollbar-none py-1">
             {navLinks.map((link) => {
               const Icon = link.icon;
               const isActive = activeTab === link.id;
@@ -81,14 +90,14 @@ export default function App() {
                 <button
                   key={link.id}
                   onClick={() => setActiveTab(link.id)}
-                  className={`px-3.5 py-2 rounded-full text-[10px] md:text-xs font-display font-semibold tracking-wide uppercase transition-all duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
+                  className={`px-4 py-2.5 rounded-full text-xs md:text-xs font-display font-bold tracking-wider uppercase transition-all duration-350 ease-[cubic-bezier(0.32,0.72,0,1)] flex items-center gap-2 cursor-pointer whitespace-nowrap ${
                     isActive 
-                      ? 'bg-fifagold text-[#050505] shadow-[0_4px_12px_rgba(212,175,55,0.3)] scale-[1.03] font-bold' 
-                      : 'text-slate-400 hover:text-white hover:bg-white/5'
+                      ? 'bg-gradient-to-r from-fifagold via-amber-400 to-fifagold text-[#050505] shadow-[0_8px_20px_-4px_rgba(212,175,55,0.45)] border border-fifagold/30 scale-[1.03]' 
+                      : 'text-slate-400 hover:text-white hover:bg-white/5 border border-transparent'
                   }`}
                 >
-                  <Icon className="w-3.5 h-3.5 flex-shrink-0" />
-                  <span className="hidden sm:inline">{link.label}</span>
+                  <Icon className="w-4 h-4 flex-shrink-0" />
+                  <span className="hidden md:inline">{link.label}</span>
                 </button>
               );
             })}
@@ -111,5 +120,6 @@ export default function App() {
         </div>
       </footer>
     </div>
+    </>
   );
 }

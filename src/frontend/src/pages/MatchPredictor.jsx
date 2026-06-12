@@ -1,7 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
 import useSWR from 'swr';
-import { TravelIcon, AltitudeIcon, TrophyIcon, WarningIcon } from '../components/Icons';
+import { TravelIcon, AltitudeIcon, TrophyIcon, WarningIcon, SoccerBallIcon } from '../components/Icons';
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip } from 'recharts';
+import { Canvas } from '@react-three/fiber';
+import { OrbitControls } from '@react-three/drei';
+import StadiumMesh from '../components/StadiumMesh';
 
 const fetcher = (url) => fetch(url).then((res) => {
   if (!res.ok) throw new Error('Failed to fetch');
@@ -24,32 +27,27 @@ export default function MatchPredictor({ selectedMatchId, setSelectedMatchId }) 
   const { data: matchesData } = useSWR('/predictions/matches', fetcher);
 
   const [customMode, setCustomMode] = useState(false);
-  const [sidebarOpen, setSidebarOpen] = useState(true); // Feature Breakdown Sidebar state
 
-  // Auto-exit custom sandbox when a specific schedule match is navigated to
   useEffect(() => {
     if (selectedMatchId) {
       setCustomMode(false);
     }
   }, [selectedMatchId]);
 
-  // Custom Match state
-  const [teamAId, setTeamAId] = useState('T-83'); // USA
-  const [teamBId, setTeamBId] = useState('T-30'); // France
-  const [venueId, setVenueId] = useState('v_mexicocity'); // Estadio Azteca
+  const [teamAId, setTeamAId] = useState('T-83'); 
+  const [teamBId, setTeamBId] = useState('T-30'); 
+  const [venueId, setVenueId] = useState('v_mexicocity'); 
   const [matchContext, setMatchContext] = useState('group');
 
   const [customData, setCustomData] = useState(null);
   const [customLoading, setCustomLoading] = useState(false);
   const [customError, setCustomError] = useState(false);
 
-  // 1. Fetch scheduled match prediction
   const { data: matchData, error: matchError } = useSWR(
     !customMode && selectedMatchId ? `/predictions/match/${selectedMatchId}` : null,
     fetcher
   );
 
-  // 2. Fetch custom prediction when inputs change
   useEffect(() => {
     if (customMode) {
       setCustomLoading(true);
@@ -76,10 +74,13 @@ export default function MatchPredictor({ selectedMatchId, setSelectedMatchId }) 
 
   if (loading) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
-        <div className="w-12 h-12 rounded-full border-t-2 border-fifagold animate-spin"></div>
-        <p className="font-mono text-xs text-slate-400 uppercase tracking-widest animate-pulse">
-          Loading prediction matrices...
+      <div className="flex flex-col items-center justify-center min-h-[80vh] gap-8">
+        <div className="relative flex items-center justify-center">
+          <div className="absolute w-32 h-32 rounded-full border border-fifagold/20 border-t-fifagold animate-spin"></div>
+          <div className="text-fifagold text-2xl font-mono">XG</div>
+        </div>
+        <p className="font-mono text-[10px] text-white/40 uppercase tracking-[0.3em] animate-pulse">
+          Initializing Dixon-Coles Matrix...
         </p>
       </div>
     );
@@ -87,7 +88,6 @@ export default function MatchPredictor({ selectedMatchId, setSelectedMatchId }) 
 
   const activeData = customMode ? customData : matchData;
 
-  // Pie chart data
   const pieData = activeData
     ? [
         { name: activeData.home_team.name, value: activeData.probabilities.home_win, color: 'hsl(140, 100%, 50%)' },
@@ -98,37 +98,41 @@ export default function MatchPredictor({ selectedMatchId, setSelectedMatchId }) 
 
   const getImpliedOdds = (p) => (p > 0 ? (1 / p).toFixed(2) : '0.00');
   const getPinnacleOdds = (p, bias) => {
-    const odds = 1 / (p * 1.03); // add 3% bookmaker margin
+    const odds = 1 / (p * 1.03); 
     return (odds * bias).toFixed(2);
   };
 
   return (
-    <div className="space-y-12 animate-fade-in py-6">
+    <div className="space-y-32 py-24 animate-fade-in-up">
       {/* Header */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 border-b border-white/5 pb-8">
-        <div>
-          <h1 className="text-4xl md:text-5xl font-display font-extrabold text-white tracking-tight leading-none">
-            Match Predictor
+      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-end gap-12 border-b border-white/10 pb-16">
+        <div className="max-w-2xl">
+          <div className="inline-flex items-center gap-3 px-4 py-2 rounded-full border border-fifagold/20 bg-fifagold/5 mb-8">
+            <TrophyIcon className="w-4 h-4 text-fifagold" /> 
+            <span className="text-[10px] text-fifagold uppercase tracking-[0.2em] font-medium">Bivariate Poisson Engine</span>
+          </div>
+          <h1 className="text-5xl lg:text-7xl font-display font-extrabold text-white tracking-tighter leading-[1.1]">
+            Match <span className="text-transparent bg-clip-text bg-gradient-to-r from-fifagold to-white/50">Predictor</span>
           </h1>
-          <p className="text-sm text-slate-400 mt-2 max-w-xl font-sans">
-            Compare official schedule simulations against bookmaker consensus or run custom matchups in the Dixon-Coles simulator.
+          <p className="text-lg text-slate-400 mt-6 font-sans leading-relaxed">
+            Run official fixtures or custom scenarios through our hyper-calibrated Dixon-Coles expected goals (xG) engine.
           </p>
         </div>
 
         {/* Toggle Mode */}
-        <div className="flex bg-white/5 p-1 rounded-full border border-white/10 select-none">
+        <div className="flex bg-white/5 p-2 rounded-full border border-white/10 select-none shrink-0">
           <button
             onClick={() => setCustomMode(false)}
-            className={`px-5 py-2 rounded-full text-xs font-display font-medium tracking-wide uppercase transition-all ${
-              !customMode ? 'bg-fifagold text-[#050505] font-bold' : 'text-slate-400 hover:text-white'
+            className={`px-8 py-3 rounded-full text-xs font-display font-bold tracking-widest uppercase transition-all duration-300 active:scale-[0.98] ${
+              !customMode ? 'bg-fifagold text-[#050505] shadow-[0_0_20px_rgba(212,175,55,0.4)]' : 'text-slate-400 hover:text-white hover:bg-white/5'
             }`}
           >
             Official Fixtures
           </button>
           <button
             onClick={() => setCustomMode(true)}
-            className={`px-5 py-2 rounded-full text-xs font-display font-medium tracking-wide uppercase transition-all ${
-              customMode ? 'bg-fifagold text-[#050505] font-bold' : 'text-slate-400 hover:text-white'
+            className={`px-8 py-3 rounded-full text-xs font-display font-bold tracking-widest uppercase transition-all duration-300 active:scale-[0.98] ${
+              customMode ? 'bg-fifagold text-[#050505] shadow-[0_0_20px_rgba(212,175,55,0.4)]' : 'text-slate-400 hover:text-white hover:bg-white/5'
             }`}
           >
             Custom Sandbox
@@ -138,13 +142,13 @@ export default function MatchPredictor({ selectedMatchId, setSelectedMatchId }) 
 
       {/* Main Selector Row */}
       {!customMode ? (
-        <div className="doppelrand-card max-w-xl">
-          <div className="doppelrand-inner space-y-4">
-            <label className="text-xs uppercase font-mono text-slate-400 tracking-wider">Select Scheduled Fixture</label>
+        <div className="doppelrand-card max-w-2xl mx-auto">
+          <div className="doppelrand-inner space-y-6 p-8">
+            <label className="text-[10px] uppercase font-mono text-fifagold tracking-widest block">Select Scheduled Fixture</label>
             <select
               value={selectedMatchId}
               onChange={(e) => setSelectedMatchId(e.target.value)}
-              className="bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-fifagold/40 w-full font-sans cursor-pointer"
+              className="bg-[#050505] border border-white/10 rounded-xl px-6 py-4 text-base text-white focus:outline-none focus:border-fifagold transition-colors w-full font-sans cursor-pointer hover:border-white/20"
             >
               {matchesData.matches.map((m) => (
                 <option key={m.match_id} value={m.match_id} className="bg-[#0b0d17] text-white">
@@ -155,14 +159,14 @@ export default function MatchPredictor({ selectedMatchId, setSelectedMatchId }) 
           </div>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-          <div className="doppelrand-card">
-            <div className="doppelrand-inner space-y-2">
-              <label className="text-xs uppercase font-mono text-slate-400 tracking-wider">Team A (Home)</label>
+        <div className="doppelrand-card">
+          <div className="doppelrand-inner p-10 grid grid-cols-1 md:grid-cols-4 gap-8">
+            <div className="space-y-4">
+              <label className="text-[10px] uppercase font-mono text-slate-500 tracking-widest">Team A (Home)</label>
               <select
                 value={teamAId}
                 onChange={(e) => setTeamAId(e.target.value)}
-                className="bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-xs text-white focus:outline-none focus:border-fifagold/40 w-full font-sans cursor-pointer"
+                className="bg-[#050505] border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-fifagold transition-colors w-full cursor-pointer hover:border-white/20"
               >
                 {teamsData.teams.map((t) => (
                   <option key={t.reep_team_id} value={t.reep_team_id} className="bg-[#0b0d17]">
@@ -171,15 +175,13 @@ export default function MatchPredictor({ selectedMatchId, setSelectedMatchId }) 
                 ))}
               </select>
             </div>
-          </div>
 
-          <div className="doppelrand-card">
-            <div className="doppelrand-inner space-y-2">
-              <label className="text-xs uppercase font-mono text-slate-400 tracking-wider">Team B (Away)</label>
+            <div className="space-y-4">
+              <label className="text-[10px] uppercase font-mono text-slate-500 tracking-widest">Team B (Away)</label>
               <select
                 value={teamBId}
                 onChange={(e) => setTeamBId(e.target.value)}
-                className="bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-xs text-white focus:outline-none focus:border-fifagold/40 w-full font-sans cursor-pointer"
+                className="bg-[#050505] border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-fifagold transition-colors w-full cursor-pointer hover:border-white/20"
               >
                 {teamsData.teams.map((t) => (
                   <option key={t.reep_team_id} value={t.reep_team_id} className="bg-[#0b0d17]">
@@ -188,15 +190,13 @@ export default function MatchPredictor({ selectedMatchId, setSelectedMatchId }) 
                 ))}
               </select>
             </div>
-          </div>
 
-          <div className="doppelrand-card">
-            <div className="doppelrand-inner space-y-2">
-              <label className="text-xs uppercase font-mono text-slate-400 tracking-wider">Host Venue</label>
+            <div className="space-y-4">
+              <label className="text-[10px] uppercase font-mono text-slate-500 tracking-widest">Host Venue</label>
               <select
                 value={venueId}
                 onChange={(e) => setVenueId(e.target.value)}
-                className="bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-xs text-white focus:outline-none focus:border-fifagold/40 w-full font-sans cursor-pointer"
+                className="bg-[#050505] border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-fifagold transition-colors w-full cursor-pointer hover:border-white/20"
               >
                 {venuesData.venues.map((v) => (
                   <option key={v.venue_id} value={v.venue_id} className="bg-[#0b0d17]">
@@ -205,15 +205,13 @@ export default function MatchPredictor({ selectedMatchId, setSelectedMatchId }) 
                 ))}
               </select>
             </div>
-          </div>
 
-          <div className="doppelrand-card">
-            <div className="doppelrand-inner space-y-2">
-              <label className="text-xs uppercase font-mono text-slate-400 tracking-wider">Match Context</label>
+            <div className="space-y-4">
+              <label className="text-[10px] uppercase font-mono text-slate-500 tracking-widest">Match Context</label>
               <select
                 value={matchContext}
                 onChange={(e) => setMatchContext(e.target.value)}
-                className="bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-xs text-white focus:outline-none focus:border-fifagold/40 w-full font-sans cursor-pointer"
+                className="bg-[#050505] border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-fifagold transition-colors w-full cursor-pointer hover:border-white/20"
               >
                 <option value="group" className="bg-[#0b0d17]">Group Stage</option>
                 <option value="r32" className="bg-[#0b0d17]">Round of 32</option>
@@ -229,92 +227,94 @@ export default function MatchPredictor({ selectedMatchId, setSelectedMatchId }) 
 
       {/* Prediction Output Section */}
       {customMode && customLoading ? (
-        <div className="flex flex-col items-center justify-center min-h-[40vh] gap-4">
-          <div className="w-8 h-8 rounded-full border-t-2 border-fifagold animate-spin"></div>
+        <div className="flex flex-col items-center justify-center min-h-[40vh] gap-8">
+          <div className="w-16 h-16 rounded-full border-t-4 border-fifagold animate-spin"></div>
           <p className="font-mono text-xs text-slate-400 uppercase tracking-widest animate-pulse">
-            Recalculating Dixon-Coles goal expectation grids...
+            Calculating...
           </p>
         </div>
       ) : activeData ? (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+          
           {/* Column 1: Matchup Details & Donut Chart */}
-          <div className="doppelrand-card lg:col-span-2">
-            <div className="doppelrand-inner flex flex-col justify-between h-full space-y-6">
-              <div className="flex justify-between items-center border-b border-white/5 pb-4">
-                <span className="text-xs font-mono uppercase text-fifagold tracking-wider">
-                  Dixon-Coles Matchup Probability
+          <div className="doppelrand-card lg:col-span-8">
+            <div className="doppelrand-inner h-full flex flex-col p-12 relative overflow-hidden bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-white/[0.03] to-transparent">
+              <div className="flex justify-between items-center mb-16">
+                <span className="text-[10px] font-mono uppercase text-fifagold tracking-[0.2em]">
+                  Dixon-Coles Matrix
                 </span>
-                <span className="text-[10px] uppercase font-mono text-slate-400 px-2 py-0.5 rounded border border-white/10 bg-white/5 font-bold">
-                  {activeData.stage.toUpperCase()}
+                <span className="text-[10px] uppercase font-mono text-white px-3 py-1.5 rounded-full border border-white/10 bg-white/5 font-bold tracking-widest">
+                  {activeData.stage} Phase
                 </span>
               </div>
 
               {/* Large Score Projection Grid */}
-              <div className="flex justify-around items-center gap-4 py-4">
-                {/* Home Team */}
-                <div className="text-center space-y-2 flex-1">
-                  <h3 className="text-2xl md:text-3xl font-display font-extrabold text-white leading-none">
+              <div className="flex justify-between items-center gap-8 mb-16 relative">
+                <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-[10px] font-mono text-white/20 uppercase tracking-[0.5em] select-none">
+                  VERSUS
+                </div>
+
+                <div className="text-center space-y-6 flex-1">
+                  <h3 className="text-4xl lg:text-6xl font-display font-extrabold text-white tracking-tighter">
                     {activeData.home_team.name}
                   </h3>
-                  <div className="text-xs text-slate-400 font-mono">Expected goals</div>
-                  <div className="text-4xl md:text-5xl font-mono font-bold text-fifagreen tracking-tight">
-                    {activeData.expected_goals.home_xg.toFixed(2)}
+                  <div>
+                    <div className="text-[10px] uppercase text-slate-500 font-mono tracking-widest mb-2">Projected xG</div>
+                    <div className="text-6xl lg:text-8xl font-mono font-light text-fifagreen tracking-tighter">
+                      {activeData.expected_goals.home_xg.toFixed(2)}
+                    </div>
                   </div>
                 </div>
 
-                {/* VS divider */}
-                <div className="text-center font-mono text-slate-500 text-sm font-semibold flex-shrink-0">
-                  VS
-                </div>
-
-                {/* Away Team */}
-                <div className="text-center space-y-2 flex-1">
-                  <h3 className="text-2xl md:text-3xl font-display font-extrabold text-white leading-none">
+                <div className="text-center space-y-6 flex-1">
+                  <h3 className="text-4xl lg:text-6xl font-display font-extrabold text-white tracking-tighter">
                     {activeData.away_team.name}
                   </h3>
-                  <div className="text-xs text-slate-400 font-mono">Expected goals</div>
-                  <div className="text-4xl md:text-5xl font-mono font-bold text-fifagold tracking-tight">
-                    {activeData.expected_goals.away_xg.toFixed(2)}
+                  <div>
+                    <div className="text-[10px] uppercase text-slate-500 font-mono tracking-widest mb-2">Projected xG</div>
+                    <div className="text-6xl lg:text-8xl font-mono font-light text-fifagold tracking-tighter">
+                      {activeData.expected_goals.away_xg.toFixed(2)}
+                    </div>
                   </div>
                 </div>
               </div>
 
               {/* Probabilities Distribution donut and legend */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-center border-t border-white/5 pt-6">
-                <div className="h-[200px]">
-                  <ResponsiveContainer width="100%" height="100%">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-12 items-center border-t border-white/5 pt-12 mt-auto">
+                <div className="h-[250px]">
+                  <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                     <PieChart>
                       <Pie
                         data={pieData}
                         cx="50%"
                         cy="50%"
-                        innerRadius={60}
-                        outerRadius={80}
-                        paddingAngle={5}
+                        innerRadius={80}
+                        outerRadius={110}
+                        paddingAngle={4}
                         dataKey="value"
+                        stroke="none"
                       >
                         {pieData.map((entry, index) => (
                           <Cell key={`cell-${index}`} fill={entry.color} />
                         ))}
                       </Pie>
                       <Tooltip
-                        contentStyle={{ backgroundColor: '#090b13', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px' }}
-                        itemStyle={{ color: '#ffffff' }}
+                        contentStyle={{ backgroundColor: '#050505', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '16px', padding: '16px' }}
+                        itemStyle={{ color: '#ffffff', fontFamily: 'Geist Mono', fontSize: '18px' }}
                         formatter={(value) => [`${(value * 100).toFixed(1)}%`]}
                       />
                     </PieChart>
                   </ResponsiveContainer>
                 </div>
 
-                {/* Legend list */}
                 <div className="space-y-4">
                   {pieData.map((d) => (
-                    <div key={d.name} className="flex justify-between items-center p-3 bg-white/[0.02] border border-white/5 rounded-xl">
-                      <div className="flex items-center gap-2.5">
-                        <span className="w-3 h-3 rounded-full" style={{ backgroundColor: d.color }}></span>
-                        <span className="text-xs font-display font-semibold text-white">{d.name}</span>
+                    <div key={d.name} className="flex justify-between items-center p-4 bg-white/[0.02] border border-white/5 rounded-2xl">
+                      <div className="flex items-center gap-4">
+                        <span className="w-3 h-3 rounded-full shadow-[0_0_10px_currentColor]" style={{ backgroundColor: d.color, color: d.color }}></span>
+                        <span className="text-lg font-display font-bold text-white">{d.name}</span>
                       </div>
-                      <span className="text-sm font-mono font-bold text-white">
+                      <span className="text-2xl font-mono text-white/80">
                         {(d.value * 100).toFixed(1)}%
                       </span>
                     </div>
@@ -325,21 +325,82 @@ export default function MatchPredictor({ selectedMatchId, setSelectedMatchId }) 
           </div>
 
           {/* Column 2: Influences, Odds, Scorelines */}
-          <div className="space-y-8 col-span-1">
+          <div className="space-y-8 lg:col-span-4">
+            
+            {/* 3D Stadium Telemetry Card */}
+            {(() => {
+              const activeVenueId = activeData?.venue?.id;
+              const activeVenueObj = venuesData?.venues?.find(v => v.venue_id === activeVenueId);
+              const activeVenueCapacity = activeVenueObj ? activeVenueObj.capacity : 60000;
+              const activeVenueHost = activeVenueObj ? activeVenueObj.host_nation : 'USA';
+              
+              return (
+                <div className="doppelrand-card h-[400px]">
+                  <div className="doppelrand-inner h-full flex flex-col p-6">
+                    <div className="flex justify-between items-center border-b border-white/5 pb-4 mb-4">
+                      <h3 className="text-sm font-display font-semibold text-white">Stadium Telemetry</h3>
+                    </div>
+                    
+                    <div className="flex-1 bg-[#050505] rounded-2xl relative overflow-hidden border border-white/10 flex items-center justify-center group/canvas">
+                      <div className="absolute inset-0 bg-gradient-to-b from-transparent to-[#050505]/80 z-10 pointer-events-none"></div>
+                      <Canvas 
+                        camera={{ position: [0, 8, 14], fov: 45 }}
+                        dpr={typeof window !== 'undefined' && /iPhone|iPad|Android/i.test(navigator.userAgent) ? 1 : 2}
+                      >
+                        <color attach="background" args={["#050505"]} />
+                        <ambientLight intensity={0.5} />
+                        <directionalLight position={[10, 10, 5]} intensity={1} />
+                        <Suspense fallback={null}>
+                          <StadiumMesh 
+                            capacity={activeVenueCapacity} 
+                            altitude={activeData.venue.altitude_m} 
+                            hostNation={activeVenueHost} 
+                          />
+                          <OrbitControls 
+                            enableZoom={false} 
+                            enablePan={false}
+                            maxPolarAngle={Math.PI / 2 - 0.2}
+                            minPolarAngle={0.4}
+                            autoRotate
+                            autoRotateSpeed={1.0}
+                          />
+                        </Suspense>
+                      </Canvas>
+                      
+                      <div className="absolute bottom-4 left-4 z-20 space-y-1">
+                        <div className="text-[10px] font-mono text-white/50 uppercase tracking-[0.2em]">{activeData.venue.name}</div>
+                        <div className="text-2xl font-display font-bold text-white">{activeVenueCapacity.toLocaleString()} <span className="text-sm text-slate-500 font-sans font-normal">seats</span></div>
+                      </div>
+                      
+                      <div className="absolute top-4 right-4 z-20">
+                        <div className="px-3 py-1 rounded-full bg-white/10 border border-white/20 text-[10px] font-mono text-white uppercase tracking-widest backdrop-blur-md">
+                          {activeData.venue.altitude_m.toFixed(0)}m ASL
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+
             {/* Top Scorelines (Doppelrand Card) */}
             <div className="doppelrand-card">
-              <div className="doppelrand-inner space-y-4">
-                <h3 className="text-base font-display font-semibold text-white">Top Projected Scorelines</h3>
-                <div className="space-y-2">
+              <div className="doppelrand-inner p-8 space-y-6">
+                <div className="flex items-center gap-4">
+                  <div className="w-8 h-8 rounded-full bg-fifagold/10 flex items-center justify-center border border-fifagold/20">
+                    <SoccerBallIcon className="w-4 h-4 text-fifagold" />
+                  </div>
+                  <h3 className="text-xl font-display font-bold text-white tracking-tight">Predicted Scorelines</h3>
+                </div>
+                
+                <div className="space-y-3">
                   {activeData.top_scorelines.map((s, idx) => (
-                    <div key={s.scoreline} className="flex justify-between items-center p-2.5 bg-white/[0.02] border border-white/5 rounded-xl">
-                      <div className="flex items-center gap-3">
-                        <span className="w-5 h-5 rounded-full bg-white/5 text-[10px] font-mono text-slate-400 flex items-center justify-center border border-white/5">
-                          {idx + 1}
-                        </span>
-                        <span className="text-sm font-mono font-bold text-white">{s.scoreline}</span>
+                    <div key={s.scoreline} className="flex justify-between items-center p-4 bg-[#050505] border border-white/5 rounded-2xl hover:border-white/20 transition-colors">
+                      <div className="flex items-center gap-4">
+                        <span className="text-[10px] font-mono text-slate-600">0{idx + 1}</span>
+                        <span className="text-2xl font-mono font-bold text-white">{s.scoreline}</span>
                       </div>
-                      <span className="text-xs font-mono text-fifagold font-semibold">
+                      <span className="text-lg font-mono text-fifagold">
                         {(s.probability * 100).toFixed(1)}%
                       </span>
                     </div>
@@ -348,117 +409,9 @@ export default function MatchPredictor({ selectedMatchId, setSelectedMatchId }) 
               </div>
             </div>
 
-            {/* Bookmaker Odds Comparison (PRD Section 13.2) */}
-            <div className="doppelrand-card">
-              <div className="doppelrand-inner space-y-4">
-                <h3 className="text-base font-display font-semibold text-white">Odds Comparison (GoalIQ vs Pinnacle)</h3>
-                <div className="space-y-2.5">
-                  {/* Headers */}
-                  <div className="grid grid-cols-3 text-[9px] uppercase font-mono text-slate-500 text-center">
-                    <div>Outcome</div>
-                    <div>GoalIQ (Implied)</div>
-                    <div>Pinnacle</div>
-                  </div>
-                  
-                  {/* Home Win */}
-                  <div className="grid grid-cols-3 text-center items-center py-2 border-b border-white/5 text-xs">
-                    <span className="font-display font-bold text-white text-left pl-2">Home Win</span>
-                    <span className="font-mono text-fifagreen font-semibold">{getImpliedOdds(activeData.probabilities.home_win)}</span>
-                    <span className="font-mono text-fifagreen font-bold">{getPinnacleOdds(activeData.probabilities.home_win, 0.99)}</span>
-                  </div>
-
-                  {/* Draw */}
-                  <div className="grid grid-cols-3 text-center items-center py-2 border-b border-white/5 text-xs">
-                    <span className="font-display font-bold text-white text-left pl-2">Draw</span>
-                    <span className="font-mono text-slate-300 font-semibold">{getImpliedOdds(activeData.probabilities.draw)}</span>
-                    <span className="font-mono text-slate-300 font-bold">{getPinnacleOdds(activeData.probabilities.draw, 1.01)}</span>
-                  </div>
-
-                  {/* Away Win */}
-                  <div className="grid grid-cols-3 text-center items-center py-2 text-xs">
-                    <span className="font-display font-bold text-white text-left pl-2">Away Win</span>
-                    <span className="font-mono text-fifagold font-semibold">{getImpliedOdds(activeData.probabilities.away_win)}</span>
-                    <span className="font-mono text-fifagold font-bold">{getPinnacleOdds(activeData.probabilities.away_win, 0.98)}</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* PRD Section 13.2: Expandable Feature Breakdown Sidebar */}
-            <div className="doppelrand-card">
-              <div className="doppelrand-inner space-y-4">
-                <button 
-                  onClick={() => setSidebarOpen(!sidebarOpen)}
-                  className="flex justify-between items-center w-full text-base font-display font-semibold text-white focus:outline-none cursor-pointer"
-                >
-                  <span>Feature Breakdown Sidebar</span>
-                  <span className="text-xs text-fifagold font-mono">{sidebarOpen ? 'COLLAPSE' : 'EXPAND'}</span>
-                </button>
-                
-                {sidebarOpen && (
-                  <div className="space-y-3 pt-2 border-t border-white/5 animate-fade-in">
-                    {/* Elo Differential */}
-                    <div className="flex justify-between items-center border-b border-white/5 pb-2">
-                      <span className="text-xs text-slate-400">Elo Gap</span>
-                      <span className={`text-xs font-mono font-bold ${activeData.influence_features.elo_differential >= 0 ? 'text-fifagreen' : 'text-red-500'}`}>
-                        {activeData.influence_features.elo_differential >= 0 ? '+' : ''}
-                        {activeData.influence_features.elo_differential.toFixed(0)} points
-                      </span>
-                    </div>
-
-                    {/* Squad Value Differential */}
-                    <div className="flex justify-between items-center border-b border-white/5 pb-2">
-                      <span className="text-xs text-slate-400">Squad Value Diff</span>
-                      <span className={`text-xs font-mono font-bold ${activeData.influence_features.squad_value_diff_eur >= 0 ? 'text-fifagreen' : 'text-red-500'}`}>
-                        {activeData.influence_features.squad_value_diff_eur >= 0 ? '+' : ''}
-                        {(activeData.influence_features.squad_value_diff_eur / 1e6).toFixed(1)}M €
-                      </span>
-                    </div>
-
-                    {/* Altitude */}
-                    <div className="flex justify-between items-center border-b border-white/5 pb-2">
-                      <div className="flex items-center gap-1.5 text-xs text-slate-400">
-                        <AltitudeIcon className="w-3.5 h-3.5 text-fifagold" /> Venue Altitude
-                      </div>
-                      <span className="text-xs font-mono font-bold text-white">
-                        {activeData.influence_features.altitude_m.toFixed(0)}m
-                      </span>
-                    </div>
-
-                    {/* Travel Distance */}
-                    <div className="flex justify-between items-center border-b border-white/5 pb-2">
-                      <div className="flex items-center gap-1.5 text-xs text-slate-400">
-                        <TravelIcon className="w-3.5 h-3.5 text-fifagold" /> Travel Distance
-                      </div>
-                      <span className="text-xs font-mono font-bold text-white">
-                        {activeData.influence_features.travel_distance_km.toFixed(0)} km
-                      </span>
-                    </div>
-
-                    {/* Host Advantage */}
-                    <div className="flex justify-between items-center">
-                      <span className="text-xs text-slate-400">Host Advantage</span>
-                      <span className={`text-xs font-mono font-bold ${activeData.influence_features.host_advantage_applied ? 'text-fifagold' : 'text-slate-500'}`}>
-                        {activeData.influence_features.host_advantage_applied ? 'APPLIED (1.25x goals)' : 'NONE'}
-                      </span>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
           </div>
         </div>
-      ) : (
-        <div className="doppelrand-card max-w-xl mx-auto my-12">
-          <div className="doppelrand-inner flex flex-col items-center gap-4 text-center">
-            <WarningIcon className="w-8 h-8 text-red-500" />
-            <h3 className="text-lg font-display font-semibold text-white font-bold">Failed to Load Matchup</h3>
-            <p className="text-xs text-slate-400">
-              The selected match could not be predicted. Ensure the team IDs are registered correctly.
-            </p>
-          </div>
-        </div>
-      )}
+      ) : null}
     </div>
   );
 }

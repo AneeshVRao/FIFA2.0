@@ -9,7 +9,7 @@ const fetcher = (url) => fetch(url).then((res) => {
   return res.json();
 });
 
-// Confederation Color Mapper
+// Confederation Color Mapper (Ethereal Glass Neon Palette)
 const getConfederationColor = (confed) => {
   switch (confed?.toUpperCase()) {
     case 'UEFA': return '#6366f1';      // Indigo
@@ -20,6 +20,21 @@ const getConfederationColor = (confed) => {
     case 'OFC': return '#ec4899';       // Pink
     default: return 'hsl(45, 100%, 50%)'; // Gold
   }
+};
+
+const CustomTooltip = ({ active, payload }) => {
+  if (active && payload && payload.length) {
+    return (
+      <div className="bg-[#050505]/90 backdrop-blur-xl border border-white/10 p-4 rounded-2xl shadow-2xl">
+        <p className="text-white font-display font-bold text-lg mb-1">{payload[0].payload.name}</p>
+        <div className="flex items-center gap-4">
+          <p className="text-fifagold font-mono text-xl">{payload[0].value.toFixed(1)}%</p>
+          <p className="text-[10px] text-slate-500 font-mono tracking-widest uppercase">{payload[0].payload.confederation}</p>
+        </div>
+      </div>
+    );
+  }
+  return null;
 };
 
 export default function Dashboard({ onSelectMatch }) {
@@ -36,10 +51,13 @@ export default function Dashboard({ onSelectMatch }) {
 
   if (loading) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
-        <div className="w-12 h-12 rounded-full border-t-2 border-fifagold animate-spin"></div>
-        <p className="font-mono text-xs text-slate-400 uppercase tracking-widest animate-pulse">
-          Synchronizing broadcast telemetry...
+      <div className="flex flex-col items-center justify-center min-h-[80vh] gap-8">
+        <div className="relative flex items-center justify-center">
+          <div className="absolute w-32 h-32 rounded-full border border-fifagold/20 border-t-fifagold animate-spin"></div>
+          <TrophyIcon className="w-8 h-8 text-fifagold/50 animate-pulse" />
+        </div>
+        <p className="font-mono text-[10px] text-white/40 uppercase tracking-[0.3em] animate-pulse">
+          Synchronizing Telemetry...
         </p>
       </div>
     );
@@ -47,12 +65,14 @@ export default function Dashboard({ onSelectMatch }) {
 
   if (error) {
     return (
-      <div className="doppelrand-card max-w-xl mx-auto my-12">
-        <div className="doppelrand-inner flex flex-col items-center gap-4 text-center">
-          <WarningIcon className="w-8 h-8 text-red-500 animate-pulse" />
-          <h3 className="text-lg font-display font-semibold text-white">Telemetry Sync Failure</h3>
-          <p className="text-xs text-slate-400">
-            Failed to connect to the prediction engine. Ensure the backend FastAPI server is running.
+      <div className="doppelrand-card max-w-2xl mx-auto my-32">
+        <div className="doppelrand-inner flex flex-col items-center gap-6 text-center py-24">
+          <div className="w-16 h-16 rounded-full bg-red-500/10 border border-red-500/20 flex items-center justify-center">
+            <WarningIcon className="w-8 h-8 text-red-500 animate-pulse" />
+          </div>
+          <h3 className="text-3xl font-display font-semibold text-white tracking-tight">Telemetry Sync Failure</h3>
+          <p className="text-sm text-slate-400 font-mono tracking-widest uppercase">
+            Backend Prediction Engine Offline
           </p>
         </div>
       </div>
@@ -66,173 +86,72 @@ export default function Dashboard({ onSelectMatch }) {
     confederation: t.confederation,
   }));
 
-  // Filter matches based on search query
-  const filteredMatches = matchesData.matches
-    .filter((m) => {
-      const q = searchQuery.toLowerCase();
-      return (
-        m.team_a_name.toLowerCase().includes(q) ||
-        m.team_b_name.toLowerCase().includes(q) ||
-        m.venue_name.toLowerCase().includes(q) ||
-        m.stage.toLowerCase().includes(q)
-      );
-    })
-    .slice(0, 8); // limit to 8 results for dashboard view
-
-  const resolvedVenue = venuesData.venues.find((v) => v.venue_id === selectedVenueId);
-
   const getFlightPath = (venueId) => {
     const pairs = {
-      v_mexicocity: 'v_losangeles',
-      v_guadalajara: 'v_mexicocity',
-      v_monterrey: 'v_dallas',
-      v_losangeles: 'v_sanfrancisco',
-      v_sanfrancisco: 'v_seattle',
-      v_seattle: 'v_vancouver',
-      v_vancouver: 'v_toronto',
-      v_toronto: 'v_boston',
-      v_boston: 'v_newyork',
-      v_newyork: 'v_philadelphia',
-      v_philadelphia: 'v_atlanta',
-      v_atlanta: 'v_miami',
-      v_miami: 'v_houston',
-      v_houston: 'v_dallas',
-      v_dallas: 'v_kansascity',
-      v_kansascity: 'v_toronto',
+      v_mexicocity: 'v_losangeles', v_guadalajara: 'v_mexicocity', v_monterrey: 'v_dallas',
+      v_losangeles: 'v_sanfrancisco', v_sanfrancisco: 'v_seattle', v_seattle: 'v_vancouver',
+      v_vancouver: 'v_toronto', v_toronto: 'v_boston', v_boston: 'v_newyork',
+      v_newyork: 'v_philadelphia', v_philadelphia: 'v_atlanta', v_atlanta: 'v_miami',
+      v_miami: 'v_houston', v_houston: 'v_dallas', v_dallas: 'v_kansascity', v_kansascity: 'v_toronto',
     };
     
     const startId = pairs[venueId] || 'v_newyork';
-    
-    const dists = {
-      v_mexicocity: 2420,
-      v_guadalajara: 460,
-      v_monterrey: 920,
-      v_losangeles: 550,
-      v_sanfrancisco: 1100,
-      v_seattle: 230,
-      v_vancouver: 3350,
-      v_toronto: 900,
-      v_boston: 300,
-      v_newyork: 150,
-      v_philadelphia: 1050,
-      v_atlanta: 980,
-      v_miami: 1550,
-      v_houston: 380,
-      v_dallas: 780,
-      v_kansascity: 1850,
-    };
-    
-    const alts = {
-      v_mexicocity: 2240,
-      v_guadalajara: 1560,
-      v_monterrey: 535,
-      v_losangeles: 40,
-      v_sanfrancisco: 12,
-      v_seattle: 4,
-      v_vancouver: 5,
-      v_toronto: 76,
-      v_boston: 85,
-      v_newyork: 10,
-      v_philadelphia: 5,
-      v_atlanta: 315,
-      v_miami: 3,
-      v_houston: 15,
-      v_dallas: 180,
-      v_kansascity: 275,
-    };
-
-    const startAlt = alts[startId] || 0;
-    const endAlt = alts[venueId] || 0;
+    const dists = { v_mexicocity: 2420, v_guadalajara: 460, v_monterrey: 920, v_losangeles: 550, v_sanfrancisco: 1100, v_seattle: 230, v_vancouver: 3350, v_toronto: 900, v_boston: 300, v_newyork: 150, v_philadelphia: 1050, v_atlanta: 980, v_miami: 1550, v_houston: 380, v_dallas: 780, v_kansascity: 1850 };
+    const alts = { v_mexicocity: 2240, v_guadalajara: 1560, v_monterrey: 535, v_losangeles: 40, v_sanfrancisco: 12, v_seattle: 4, v_vancouver: 5, v_toronto: 76, v_boston: 85, v_newyork: 10, v_philadelphia: 5, v_atlanta: 315, v_miami: 3, v_houston: 15, v_dallas: 180, v_kansascity: 275 };
 
     return {
       start: { id: startId },
       end: { id: venueId },
       distance_km: dists[venueId] || 1000,
-      altitude_diff_m: Math.abs(endAlt - startAlt)
+      altitude_diff_m: Math.abs((alts[venueId] || 0) - (alts[startId] || 0))
     };
   };
 
   return (
-    <div className="space-y-12 animate-fade-in py-6">
+    <div className="space-y-32 animate-fade-in-up py-24">
       {/* Hero Header Section */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 border-b border-white/5 pb-8">
-        <div>
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-fifagold/20 bg-fifagold/5 text-[10px] text-fifagold uppercase tracking-[0.2em] font-medium mb-3">
-            <TrophyIcon className="w-3.5 h-3.5" /> Phase 4 Telemetry Active
+      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-end gap-12 border-b border-white/10 pb-16">
+        <div className="max-w-2xl">
+          <div className="inline-flex items-center gap-3 px-4 py-2 rounded-full border border-fifagold/20 bg-fifagold/5 mb-8">
+            <TrophyIcon className="w-4 h-4 text-fifagold" /> 
+            <span className="text-[10px] text-fifagold uppercase tracking-[0.2em] font-medium">Phase 4 Telemetry Active</span>
           </div>
-          <h1 className="text-4xl md:text-5xl font-display font-extrabold text-white tracking-tight leading-none">
-            Broadcast Dashboard
+          <h1 className="text-5xl lg:text-7xl font-display font-extrabold text-white tracking-tighter leading-[1.1]">
+            Global <span className="text-transparent bg-clip-text bg-gradient-to-r from-fifagold to-fifagreen">Forecast</span>
           </h1>
-          <p className="text-sm text-slate-400 mt-2 max-w-xl font-sans">
-            Real-time simulations and spatial telemetry mapped across the 16 host cities of the FIFA World Cup 2026.
+          <p className="text-lg text-slate-400 mt-6 font-sans leading-relaxed">
+            Real-time multi-dimensional Monte Carlo simulations mapping tournament probability surfaces across 16 host cities.
           </p>
         </div>
 
-        {/* Top Winner Card */}
-        <div className="doppelrand-card w-full md:w-auto min-w-[280px]">
-          <div className="doppelrand-inner flex justify-between items-center">
+        {/* Top Winner Card (Doppelrand) */}
+        <div className="doppelrand-card w-full lg:w-96 shrink-0 group">
+          <div className="doppelrand-inner flex flex-col justify-between h-48 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-fifagold/10 via-[#0b0d17] to-[#0b0d17]">
+            <div className="flex justify-between items-start">
+              <div className="w-12 h-12 rounded-full bg-white/5 flex items-center justify-center border border-white/10 group-hover:scale-110 transition-transform duration-700 ease-[cubic-bezier(0.32,0.72,0,1)]">
+                <TrophyIcon className="w-6 h-6 text-fifagold" />
+              </div>
+              <span className="text-[10px] uppercase font-mono text-fifagold/50 tracking-[0.2em]">Model Favorite</span>
+            </div>
+            
             <div>
-              <span className="text-[10px] uppercase font-mono text-slate-400 tracking-wider">Model Favorite</span>
-              <h2 className="text-2xl font-display font-bold text-white mt-1">
+              <h2 className="text-4xl font-display font-bold text-white tracking-tight">
                 {winnerData.teams[0]?.team_name}
               </h2>
-            </div>
-            <div className="text-right flex-shrink-0 ml-4">
-              <span className="text-[10px] uppercase font-mono text-fifagold tracking-wider">Win Prob</span>
-              <div className="text-2xl font-mono font-bold text-fifagold mt-1">
-                {(winnerData.teams[0]?.p_champion * 100).toFixed(1)}%
+              <div className="flex items-end gap-3 mt-2">
+                <div className="text-3xl font-mono font-light text-fifagold">
+                  {(winnerData.teams[0]?.p_champion * 100).toFixed(1)}<span className="text-xl text-fifagold/50">%</span>
+                </div>
+                <div className="text-[10px] uppercase font-mono text-slate-500 tracking-widest mb-1">Win Probability</div>
               </div>
             </div>
           </div>
-        </div>
-      </div>
-
-      {/* PRD Section 13.1 Card Row: Top 5 Golden Boot Candidates */}
-      <div className="space-y-4">
-        <div className="flex justify-between items-center">
-          <h3 className="text-lg font-display font-semibold text-white tracking-tight">
-            Top 5 Golden Boot Candidates
-          </h3>
-          <span className="text-[10px] font-mono text-slate-500 uppercase tracking-widest">
-            Monte Carlo Scorer Projections
-          </span>
-        </div>
-        
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-6">
-          {bootData.leaderboard.slice(0, 5).map((player, idx) => (
-            <div key={player.reep_player_id} className="doppelrand-card">
-              <div className="doppelrand-inner p-4 space-y-3">
-                <div className="flex justify-between items-center">
-                  <span className="w-5 h-5 rounded-full bg-white/5 text-[9px] font-mono text-slate-400 flex items-center justify-center border border-white/5">
-                    #{idx + 1}
-                  </span>
-                  <SoccerBallIcon className="w-4 h-4 text-fifagold/60" />
-                </div>
-                <div>
-                  <h4 className="text-sm font-display font-bold text-white truncate" title={player.player_name}>
-                    {player.player_name}
-                  </h4>
-                  <p className="text-[10px] text-slate-400 truncate">{player.team_name}</p>
-                </div>
-                <div className="border-t border-white/5 pt-2.5 flex justify-between items-center text-[10px] font-mono">
-                  <div className="space-y-1">
-                    <span className="text-slate-500 block">Exp Goals</span>
-                    <span className="text-white font-semibold">{player.mean_goals.toFixed(1)}</span>
-                  </div>
-                  <div className="space-y-1 text-right">
-                    <span className="text-slate-500 block">Boot Prob</span>
-                    <span className="text-fifagold font-bold">{(player.p_golden_boot * 100).toFixed(1)}%</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          ))}
         </div>
       </div>
 
       {/* Grid: 3D Globe + Venue Detail */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        <div className="lg:col-span-2 h-[500px]">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+        <div className="lg:col-span-8 h-[600px] xl:h-[700px]">
           <BroadcastMap
             selectedVenueId={selectedVenueId}
             onSelectVenue={(vid) => setSelectedVenueId(vid)}
@@ -241,177 +160,136 @@ export default function Dashboard({ onSelectMatch }) {
         </div>
 
         {/* Selected Venue Details (Doppelrand Bezel Card) */}
-        <div className="doppelrand-card h-full">
-          <div className="doppelrand-inner flex flex-col justify-between h-full space-y-6">
-            <div>
-              <div className="flex items-center gap-2 text-fifagold text-xs uppercase tracking-widest font-mono mb-2">
-                <StadiumIcon className="w-4 h-4" /> Venue Telemetry
+        <div className="lg:col-span-4 doppelrand-card h-full group">
+          <div className="doppelrand-inner flex flex-col justify-between h-full bg-[radial-gradient(ellipse_at_top_left,_var(--tw-gradient-stops))] from-white/5 via-[#0b0d17] to-[#0b0d17] p-10">
+            <div className="space-y-8">
+              <div className="flex items-center gap-4">
+                <div className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center border border-white/10">
+                  <StadiumIcon className="w-5 h-5 text-white/50" />
+                </div>
+                <div className="text-[10px] text-white/40 uppercase tracking-[0.2em] font-mono">
+                  Venue Telemetry
+                </div>
               </div>
-              <h2 className="text-2xl font-display font-bold text-white">
-                {resolvedVenue?.stadium_name}
-              </h2>
-              <p className="text-xs text-slate-400 mt-1">
-                {resolvedVenue?.city}, {resolvedVenue?.host_nation}
-              </p>
-            </div>
-
-            <div className="space-y-4 flex-1 my-4">
-              <div className="flex justify-between items-center border-b border-white/5 py-2">
-                <span className="text-xs text-slate-400">Altitude</span>
-                <span className="text-sm font-mono font-semibold text-white">
-                  {resolvedVenue?.altitude_m.toLocaleString()} m
-                  {resolvedVenue?.altitude_m > 1500 && (
-                    <span className="text-fifagold text-[10px] ml-1.5 uppercase font-mono bg-fifagold/10 border border-fifagold/20 px-1.5 py-0.5 rounded">
-                      High Altitude
-                    </span>
-                  )}
-                </span>
-              </div>
-              <div className="flex justify-between items-center border-b border-white/5 py-2">
-                <span className="text-xs text-slate-400">Capacity</span>
-                <span className="text-sm font-mono font-semibold text-white">
-                  {resolvedVenue?.capacity.toLocaleString()} seats
-                </span>
-              </div>
-              <div className="flex justify-between items-center border-b border-white/5 py-2">
-                <span className="text-xs text-slate-400">Coordinates</span>
-                <span className="text-xs font-mono text-slate-300">
-                  {resolvedVenue?.latitude.toFixed(4)}° N, {resolvedVenue?.longitude.toFixed(4)}° W
-                </span>
+              
+              <div>
+                <h2 className="text-4xl font-display font-bold text-white tracking-tight leading-none mb-4">
+                  {venuesData.venues.find((v) => v.venue_id === selectedVenueId)?.city}
+                </h2>
+                <p className="text-lg text-slate-400 font-sans">
+                  {venuesData.venues.find((v) => v.venue_id === selectedVenueId)?.venue_name}
+                </p>
               </div>
             </div>
 
-            <div className="p-3 bg-white/5 border border-white/10 rounded-xl">
-              <div className="text-[10px] uppercase font-mono text-slate-400 tracking-wider">Altitudinal Drag Offset</div>
-              <p className="text-xs text-slate-300 mt-1 leading-relaxed">
-                {resolvedVenue?.altitude_m > 1500 
-                  ? 'High altitude reduces air resistance. Ball velocity increases but aerodynamic curve diminishes, boosting expected goals (xG) on long-range strikes by up to 8%.'
-                  : 'Low altitude venue. Ball movement exhibits standard aerodynamic curvature and drag coefficients.'
-                }
-              </p>
+            <div className="space-y-6 pt-12 border-t border-white/5">
+              <div className="flex justify-between items-end">
+                <span className="text-[10px] font-mono text-slate-500 uppercase tracking-widest">Altitude (ASL)</span>
+                <span className="text-2xl font-mono text-white">
+                  {venuesData.venues.find((v) => v.venue_id === selectedVenueId)?.altitude_m} <span className="text-sm text-slate-500">m</span>
+                </span>
+              </div>
+              <div className="flex justify-between items-end">
+                <span className="text-[10px] font-mono text-slate-500 uppercase tracking-widest">Matches Hosted</span>
+                <span className="text-2xl font-mono text-white">
+                  {venuesData.venues.find((v) => v.venue_id === selectedVenueId)?.matches_hosted}
+                </span>
+              </div>
+              <div className="flex justify-between items-end">
+                <span className="text-[10px] font-mono text-slate-500 uppercase tracking-widest">Nation</span>
+                <span className="text-sm font-display uppercase tracking-widest text-fifagold">
+                  {venuesData.venues.find((v) => v.venue_id === selectedVenueId)?.nation}
+                </span>
+              </div>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Grid: Champion Probabilities Chart + Search Fixtures */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        {/* Chart Card + Model Accuracy Summary */}
-        <div className="space-y-8">
-          {/* Chart Card */}
-          <div className="doppelrand-card">
-            <div className="doppelrand-inner space-y-6">
-              <div className="flex justify-between items-center">
-                <h3 className="text-xl font-display font-semibold text-white">
-                  Model Champion Probabilities
-                </h3>
-                <span className="text-[9px] font-mono text-slate-500 uppercase tracking-wider">
-                  UEFA · CONMEBOL · CONCACAF · CAF · AFC
-                </span>
-              </div>
-              
-              <div className="h-[320px] w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={chartData} layout="vertical" margin={{ left: 10, right: 30, top: 0, bottom: 0 }}>
-                    <XAxis type="number" stroke="rgba(255,255,255,0.2)" fontSize={10} tickFormatter={(v) => `${v}%`} />
-                    <YAxis dataKey="name" type="category" stroke="rgba(255,255,255,0.4)" fontSize={10} width={80} />
-                    <Tooltip 
-                      contentStyle={{ backgroundColor: '#090b13', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px' }}
-                      labelStyle={{ color: '#ffffff', fontWeight: 'bold' }}
-                      itemStyle={{ color: 'hsl(45, 100%, 50%)' }}
-                      formatter={(v, name, props) => [`${v.toFixed(2)}%`, `P(Champion) - ${props.payload.confederation}`]}
-                    />
-                    <Bar dataKey="probability" radius={[0, 4, 4, 0]}>
-                      {chartData.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={getConfederationColor(entry.confederation)} />
-                      ))}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
+      {/* Asymmetrical Bento Grid: Top 5 Golden Boot & Champion Chart */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+        
+        {/* Golden Boot Top 5 Stack */}
+        <div className="lg:col-span-4 space-y-6">
+          <div className="flex items-center gap-4 mb-8">
+            <div className="w-10 h-10 rounded-full bg-fifagold/10 flex items-center justify-center border border-fifagold/20">
+              <SoccerBallIcon className="w-5 h-5 text-fifagold" />
             </div>
+            <h3 className="text-2xl font-display font-bold text-white tracking-tight">
+              Golden Boot Projections
+            </h3>
           </div>
-
-          {/* Model Accuracy Summary (PRD Section 13.1) */}
-          <div className="doppelrand-card">
-            <div className="doppelrand-inner space-y-4">
-              <h3 className="text-sm font-display font-bold text-white uppercase tracking-wider">
-                Model Backtesting Performance
-              </h3>
-              
-              <div className="grid grid-cols-2 gap-4">
-                <div className="bg-white/[0.02] border border-white/5 p-4 rounded-2xl text-center">
-                  <div className="text-xs text-slate-400 font-sans">2022 WC Holdout Accuracy</div>
-                  <div className="text-3xl font-mono font-bold text-fifagreen mt-1">57.8%</div>
-                  <div className="text-[9px] text-slate-500 font-mono mt-1">Gate: &gt;= 57.0% (Passed)</div>
-                </div>
-                <div className="bg-white/[0.02] border border-white/5 p-4 rounded-2xl text-center">
-                  <div className="text-xs text-slate-400 font-sans">Calibration Curve (ROC-AUC)</div>
-                  <div className="text-3xl font-mono font-bold text-fifagold mt-1">0.76</div>
-                  <div className="text-[9px] text-slate-500 font-mono mt-1">Isotonic calibrated classifiers</div>
+          
+          <div className="space-y-4">
+            {bootData.leaderboard.slice(0, 5).map((player, idx) => (
+              <div key={player.reep_player_id} className="doppelrand-card group cursor-default">
+                <div className="doppelrand-inner p-6 flex items-center justify-between group-hover:bg-white/[0.02] transition-colors">
+                  <div className="flex items-center gap-6">
+                    <div className="text-2xl font-mono font-light text-white/20 group-hover:text-fifagold transition-colors">
+                      0{idx + 1}
+                    </div>
+                    <div>
+                      <h4 className="text-lg font-display font-bold text-white truncate max-w-[150px]">
+                        {player.player_name}
+                      </h4>
+                      <p className="text-[10px] text-slate-400 font-mono tracking-widest uppercase mt-1">{player.team_name}</p>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-lg font-mono text-fifagold">
+                      {(player.p_golden_boot * 100).toFixed(1)}%
+                    </div>
+                    <div className="text-[10px] text-slate-500 font-mono tracking-widest uppercase mt-1">
+                      {player.mean_goals.toFixed(1)} xG
+                    </div>
+                  </div>
                 </div>
               </div>
-              
-              <p className="text-xs text-slate-400 leading-relaxed font-sans">
-                Predictive calculations evaluate Squad Elos, Travel distances, rest-day asymmetries, and altitude thresholds. Platt-calibrated HistGradientBoosting classifiers determine match probabilities.
-              </p>
-            </div>
+            ))}
           </div>
         </div>
 
-        {/* Fixture Navigator Card */}
-        <div className="doppelrand-card">
-          <div className="doppelrand-inner flex flex-col justify-between h-full space-y-6">
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-              <h3 className="text-xl font-display font-semibold text-white">
-                Fixture Navigator
-              </h3>
-              
-              <input
-                type="text"
-                placeholder="Search teams or venues..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="bg-white/5 border border-white/10 rounded-full px-4 py-1.5 text-xs text-white focus:outline-none focus:border-fifagold/40 w-full md:w-56 font-sans transition-all"
-              />
+        {/* Champion Probability Chart */}
+        <div className="lg:col-span-8 doppelrand-card h-full">
+          <div className="doppelrand-inner h-full flex flex-col p-10 relative overflow-hidden">
+            <div className="flex items-center justify-between mb-12">
+              <div className="flex items-center gap-4">
+                <div className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center border border-white/10">
+                  <TrophyIcon className="w-5 h-5 text-white/50" />
+                </div>
+                <div>
+                  <h3 className="text-2xl font-display font-bold text-white tracking-tight">Champion Probability Surface</h3>
+                  <div className="text-[10px] uppercase font-mono text-slate-500 tracking-widest mt-1">Top 10 Global Contenders</div>
+                </div>
+              </div>
             </div>
-
-            <div className="space-y-3 max-h-[380px] overflow-y-auto pr-2 flex-1">
-              {filteredMatches.length === 0 ? (
-                <p className="text-xs text-slate-500 text-center py-12">No matching fixtures found.</p>
-              ) : (
-                filteredMatches.map((m) => (
-                  <div 
-                    key={m.match_id} 
-                    onClick={() => onSelectMatch && onSelectMatch(m.match_id)}
-                    className="flex justify-between items-center bg-white/[0.02] border border-white/5 rounded-2xl p-3 hover:bg-white/5 hover:border-fifagold/30 transition-all duration-300 cursor-pointer active-press"
-                  >
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2">
-                        <span className="text-[9px] uppercase font-mono text-fifagold px-1.5 py-0.5 rounded bg-fifagold/10 border border-fifagold/20 font-bold">
-                          {m.stage.toUpperCase()}
-                        </span>
-                        {m.group_code && (
-                          <span className="text-[9px] uppercase font-mono text-slate-400">
-                            Group {m.group_code}
-                          </span>
-                        )}
-                      </div>
-                      
-                      <div className="text-sm font-display font-bold text-white mt-1.5 flex items-center gap-1.5">
-                        <span className="truncate">{m.team_a_name}</span>
-                        <span className="text-slate-500 font-mono text-xs">vs</span>
-                        <span className="truncate">{m.team_b_name}</span>
-                      </div>
-                    </div>
-
-                    <div className="text-right flex-shrink-0 ml-4">
-                      <div className="text-[10px] text-slate-400 font-sans">{m.venue_name}</div>
-                      <div className="text-[9px] text-slate-500 font-mono mt-0.5">{m.altitude_m}m altitude</div>
-                    </div>
-                  </div>
-                ))
-              )}
+            
+            <div className="flex-1 min-h-[400px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={chartData} margin={{ top: 20, right: 0, left: -20, bottom: 0 }}>
+                  <XAxis 
+                    dataKey="name" 
+                    stroke="rgba(255,255,255,0.2)" 
+                    tick={{ fill: 'rgba(255,255,255,0.5)', fontSize: 11, fontFamily: 'Space Grotesk' }}
+                    axisLine={false}
+                    tickLine={false}
+                    dy={10}
+                  />
+                  <YAxis 
+                    stroke="rgba(255,255,255,0.2)" 
+                    tick={{ fill: 'rgba(255,255,255,0.3)', fontSize: 11, fontFamily: 'JetBrains Mono' }}
+                    tickFormatter={(val) => `${val}%`}
+                    axisLine={false}
+                    tickLine={false}
+                  />
+                  <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(255,255,255,0.02)' }} />
+                  <Bar dataKey="probability" radius={[4, 4, 0, 0]} maxBarSize={60}>
+                    {chartData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={getConfederationColor(entry.confederation)} fillOpacity={0.8} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
             </div>
           </div>
         </div>

@@ -112,7 +112,7 @@ async def health_check():
     )
 
     return HealthResponse(
-        status="healthy" if db_status == "connected" and match_status == "loaded" and xg_status == "loaded" else "degraded",
+        status="healthy" if db_status == "connected" and match_status == "loaded" and xg_status == "loaded" and penalty_status == "available" else "degraded",
         database_connection=db_status,
         models_ready=models_ready,
         simulation_status="complete"

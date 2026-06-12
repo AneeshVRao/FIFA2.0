@@ -13,6 +13,23 @@ from src.simulation.shootout_sim import get_shootout_roster
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s]: %(message)s")
 logger = logging.getLogger("simulation_runner")
 
+# Helper to calculate Bayesian shrinkage prior weight
+def calculate_bayesian_prior_weight(pos: str, caps: int, goals: int) -> float:
+    if pos == "Forward":
+        alpha, beta = 2.0, 10.0
+        base_weight = 0.40
+    elif pos == "Midfielder":
+        alpha, beta = 0.5, 10.0
+        base_weight = 0.20
+    elif pos == "Defender":
+        alpha, beta = 0.1, 10.0
+        base_weight = 0.05
+    else:
+        alpha, beta = 0.0, 10.0
+        base_weight = 0.00
+    hist_rate = (goals + alpha) / (caps + beta)
+    return 0.5 * base_weight + 0.5 * hist_rate
+
 # Helper to simulate a single tournament run
 def simulate_single_tournament(
     seed: int,
@@ -189,14 +206,13 @@ def main():
     pos_counts = {tname: {1: 0, 2: 0, 3: 0, 4: 0, "3rd_advance": 0} for tname in team_meta_dict}
     
     # 3. Aggregate player expected goals (Golden Boot)
-    # Track total goals scored by each team in simulation runs
-    team_total_goals = {tname: 0.0 for tname in team_meta_dict}
+    team_goals_by_sim = {tname: np.zeros(n_sims, dtype=np.int32) for tname in team_meta_dict}
     
     # 4. Matchup forecasts aggregation
     # Key: (team_a, team_b) sorted -> counts and scorelines
     matchup_stats = {}
     
-    for run in sim_results:
+    for sim_idx, run in enumerate(sim_results):
         # Stage advancement
         for tname, stage in run["stage_reached"].items():
             stage_counts[tname][stage] += 1
@@ -229,9 +245,10 @@ def main():
                 # Advanced as best 3rd
                 pos_counts[tname]["3rd_advance"] += 1
                 
-        # Team goals scored
-        for tname, goals in run["team_goals_scored"].items():
-            team_total_goals[tname] += goals
+        # Team goals scored (accumulate from all matches: group and knockout)
+        for match in run["matches"]:
+            team_goals_by_sim[match["team_a"]][sim_idx] += match["goals_a"]
+            team_goals_by_sim[match["team_b"]][sim_idx] += match["goals_b"]
             
         # Matchups
         for match in run["matches"]:
@@ -269,66 +286,139 @@ def main():
             
     # Calculate player level Golden Boot probabilities
     # Calculate player relative goal contribution weights
-    player_goals_dist = []
+    all_players = []
+    
     for tname, players in player_dict.items():
-        # Compute normalized goal contribution fractions for the team
-        # Based on historical goals and caps (or defaults)
-        total_weight = 0.0
-        player_weights = []
+        # Compute expected matches played by this team (SF reach guarantees 8 matches total: 7 + Final/3rd match)
+        counts = stage_counts[tname]
+        expected_matches = 3.0 + float(counts["R32"] + counts["R16"] + counts["QF"] + 2 * counts["SF"]) / n_sims
         
-        for p in players:
+        # Calculate minutes per match based on starter/squad status
+        gks = [p for p in players if p["position"] == "Goalkeeper"]
+        outfields = [p for p in players if p["position"] != "Goalkeeper"]
+        
+        # Goalkeepers: Top GK plays 90 mins, others 0
+        gks.sort(key=lambda x: (x.get("international_caps") or 0, x.get("market_value_eur") or 0), reverse=True)
+        gk_minutes = {}
+        for i, gk in enumerate(gks):
+            gk_minutes[gk["reep_player_id"]] = 90.0 if i == 0 else 0.0
+            
+        # Outfielders: Compute scoring weights first to help rank importance
+        outfield_weights = []
+        for p in outfields:
             pos = p["position"]
             caps = p.get("international_caps", 15) or 15
             goals = p.get("international_goals", 0) or 0
             
-            # Base contribution prior
-            if pos == "Forward": base_weight = 0.40
-            elif pos == "Midfielder": base_weight = 0.20
-            elif pos == "Defender": base_weight = 0.05
-            else: base_weight = 0.00
+            weight = calculate_bayesian_prior_weight(pos, caps, goals)
+            outfield_weights.append((p, weight))
             
-            # Historical rate + prior smoothing
-            hist_rate = goals / max(1.0, caps)
-            weight = 0.5 * base_weight + 0.5 * hist_rate
-            if pos == "Goalkeeper":
-                weight = 0.0
+        # Sort outfielders by weight descending, then market value descending
+        outfield_weights.sort(key=lambda x: (x[1], x[0].get("market_value_eur") or 0), reverse=True)
+        
+        outfielder_minutes = {}
+        for i, (p, w) in enumerate(outfield_weights):
+            if i < 10:
+                outfielder_minutes[p["reep_player_id"]] = 80.0 # Starters
+            elif i < 15:
+                outfielder_minutes[p["reep_player_id"]] = 30.0 # Key subs
+            else:
+                outfielder_minutes[p["reep_player_id"]] = 5.0 # Bench
                 
-            player_weights.append((p, weight))
-            total_weight += weight
+        # Combine all and scale goal weights by playing time shares
+        total_adjusted_weight = 0.0
+        player_simulation_weights = []
+        
+        for p in players:
+            pid = p["reep_player_id"]
+            pos = p["position"]
             
-        # Draw player goals using Poisson distributions for Golden Boot table
-        for p, w in player_weights:
-            frac = w / max(0.001, total_weight)
+            # Retrieve playing minutes per match
+            if pos == "Goalkeeper":
+                min_per_match = gk_minutes.get(pid, 0.0)
+                weight = 0.0
+            else:
+                min_per_match = outfielder_minutes.get(pid, 5.0)
+                # Recalculate base weight
+                caps = p.get("international_caps", 15) or 15
+                goals = p.get("international_goals", 0) or 0
+                weight = calculate_bayesian_prior_weight(pos, caps, goals)
+                
+            expected_minutes = expected_matches * min_per_match
+            adjusted_weight = weight * (min_per_match / 90.0)
+            # Concentrate weights using a power exponent (e.g. 2.5) to focus goals on primary goalscoring forwards/midfielders
+            adjusted_weight = adjusted_weight ** 2.5
             
-            # Mean goals across all runs = frac * average team goals
-            avg_team_goals = team_total_goals[tname] / n_sims
-            mean_player_goals = frac * avg_team_goals
+            player_simulation_weights.append((p, adjusted_weight, expected_minutes))
+            total_adjusted_weight += adjusted_weight
             
-            # Generate simulated distributions for percentiles: p10, p50, p90
-            # Sample 1000 draws to get percentiles
-            simulated_draws = np.random.poisson(mean_player_goals, size=1000)
-            p10 = int(np.percentile(simulated_draws, 10))
-            p50 = int(np.percentile(simulated_draws, 50))
-            p90 = int(np.percentile(simulated_draws, 90))
-            
-            # Outright Golden Boot winner probability is simplified:
-            # We can approximate it by the fraction of team goals they score
-            # Let's say their probability of winning Golden Boot is proportional to their mean goals
-            player_goals_dist.append({
-                "reep_player_id": p["reep_player_id"],
-                "sim_run_id": "sim_mc_100k",
-                "mean_goals": float(mean_player_goals),
-                "p10_goals": float(p10),
-                "p50_goals": float(p50),
-                "p90_goals": float(p90),
-                "p_golden_boot": 0.0, # Will normalize later
-                "expected_minutes": float(frac * 450.0) # Approx minutes played
+        for p, adj_w, exp_min in player_simulation_weights:
+            frac = adj_w / max(0.001, total_adjusted_weight) if adj_w > 0 else 0.0
+            all_players.append({
+                "player_dict": p,
+                "tname": tname,
+                "frac": frac,
+                "expected_minutes": exp_min
             })
             
-    # Normalize Golden Boot probabilities
-    tot_mean_goals = sum(p["mean_goals"] for p in player_goals_dist)
-    for p in player_goals_dist:
-        p["p_golden_boot"] = p["mean_goals"] / max(0.001, tot_mean_goals)
+    # Perform deterministic simulation for Golden Boot & Bracket matching
+    logger.info("Running deterministic simulation run (seed 42) to align Golden Boot and Match data...")
+    official_run = simulate_single_tournament(42, group_assignments, venues, player_dict)
+    
+    official_team_goals = {tname: 0 for tname in team_meta_dict}
+    for m in official_run["matches"]:
+        official_team_goals[m["team_a"]] += m["goals_a"]
+        official_team_goals[m["team_b"]] += m["goals_b"]
+
+    # Perform vectorized Binomial goals drawing for all players across all simulations based on deterministic bracket goals
+    n_players = len(all_players)
+    player_goals_matrix = np.zeros((n_players, n_sims), dtype=np.int16)
+    
+    logger.info(f"Simulating individual goals for {n_players} players over {n_sims} runs (aligned with seed 42)...")
+    for idx, item in enumerate(all_players):
+        tname = item["tname"]
+        frac = item["frac"]
+        if frac > 0:
+            deterministic_goals = official_team_goals[tname]
+            player_goals_matrix[idx, :] = np.random.binomial(deterministic_goals, frac, size=n_sims)
+            
+    # Compute Golden Boot winners per simulation run
+    logger.info("Computing Golden Boot winner probabilities and percentiles...")
+    max_goals_per_sim = np.max(player_goals_matrix, axis=0)
+    is_winner = (player_goals_matrix == max_goals_per_sim) & (player_goals_matrix > 0)
+    winners_per_sim = np.sum(is_winner, axis=0)
+    
+    # Share the award equally among all tied players in each simulation run
+    share_per_sim = np.zeros_like(winners_per_sim, dtype=np.float64)
+    non_zero_mask = winners_per_sim > 0
+    share_per_sim[non_zero_mask] = 1.0 / winners_per_sim[non_zero_mask]
+    
+    golden_boot_probs = np.sum(is_winner * share_per_sim[np.newaxis, :], axis=1) / n_sims
+    
+    # Build final player goals distributions data
+    player_goals_dist = []
+    for idx, item in enumerate(all_players):
+        p = item["player_dict"]
+        tname = item["tname"]
+        exp_min = item["expected_minutes"]
+        
+        goals_arr = player_goals_matrix[idx, :]
+        mean_player_goals = np.mean(goals_arr)
+        p10 = int(np.percentile(goals_arr, 10))
+        p50 = int(np.percentile(goals_arr, 50))
+        p90 = int(np.percentile(goals_arr, 90))
+        p_gb = float(golden_boot_probs[idx])
+        
+        player_goals_dist.append({
+            "reep_player_id": p["reep_player_id"],
+            "sim_run_id": "sim_mc_100k",
+            "mean_goals": float(mean_player_goals),
+            "p10_goals": float(p10),
+            "p50_goals": float(p50),
+            "p90_goals": float(p90),
+            "p_golden_boot": p_gb,
+            "expected_minutes": float(exp_min)
+        })
         
     # Reconnect to DuckDB to write gold tables
     logger.info(f"Writing aggregated analytical tables to DuckDB database...")
@@ -419,6 +509,70 @@ def main():
         })
     df_paths = pd.DataFrame(podium_rows)
     con.execute("CREATE OR REPLACE TABLE bracket_path_frequencies AS SELECT * FROM df_paths")
+    
+    # 6. Table fct_matches (Single representative tournament run with seed 42)
+    logger.info("Populating fct_matches with the deterministic run...")
+    
+    matches_rows = []
+    group_idx = 1
+    for m in official_run["matches"]:
+        team_a_name = m["team_a"]
+        team_b_name = m["team_b"]
+        team_a_id = team_meta_dict[team_a_name]["reep_team_id"]
+        team_b_id = team_meta_dict[team_b_name]["reep_team_id"]
+        
+        if m["stage"] == "group":
+            match_id = f"match_{group_idx}"
+            group_idx += 1
+            matches_rows.append({
+                "match_id": match_id,
+                "stage": "group",
+                "team_a_id": team_a_id,
+                "team_a_name": team_a_name,
+                "team_b_id": team_b_id,
+                "team_b_name": team_b_name,
+                "goals_a": int(m["goals_a"]),
+                "goals_b": int(m["goals_b"]),
+                "went_to_extra_time": False,
+                "went_to_penalties": False,
+                "penalty_winner": None,
+                "venue_id": m["venue_id"]
+            })
+        else:
+            match_id = f"match_{m['match_num']}"
+            m_num = m['match_num']
+            if 73 <= m_num <= 88:
+                m_stage = "r32"
+            elif 89 <= m_num <= 96:
+                m_stage = "r16"
+            elif 97 <= m_num <= 100:
+                m_stage = "quarterfinal"
+            elif 101 <= m_num <= 102:
+                m_stage = "semifinal"
+            elif m_num == 103:
+                m_stage = "third_place"
+            elif m_num == 104:
+                m_stage = "final"
+            else:
+                m_stage = m["stage"]
+                
+            matches_rows.append({
+                "match_id": match_id,
+                "stage": m_stage,
+                "team_a_id": team_a_id,
+                "team_a_name": team_a_name,
+                "team_b_id": team_b_id,
+                "team_b_name": team_b_name,
+                "goals_a": int(m["goals_a"]),
+                "goals_b": int(m["goals_b"]),
+                "went_to_extra_time": bool(m["went_to_extra_time"]),
+                "went_to_penalties": bool(m["went_to_penalties"]),
+                "penalty_winner": m["penalty_winner"],
+                "venue_id": None
+            })
+            
+    df_fct_matches = pd.DataFrame(matches_rows)
+    con.execute("CREATE OR REPLACE TABLE fct_matches AS SELECT * FROM df_fct_matches")
     
     con.close()
     

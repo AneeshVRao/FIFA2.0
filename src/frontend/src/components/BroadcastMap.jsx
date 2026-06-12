@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { OrbitControls, Line } from '@react-three/drei';
+import { EffectComposer, Bloom, Vignette } from '@react-three/postprocessing';
 import * as THREE from 'three';
 import { TravelIcon, AltitudeIcon } from './Icons';
 
@@ -60,11 +61,11 @@ function DottedGlobe() {
   return (
     <points geometry={pointsGeometry}>
       <pointsMaterial 
-        color="#d4af37" 
-        size={0.065} 
+        color="#888888" 
+        size={0.03} 
         sizeAttenuation={true} 
         transparent 
-        opacity={0.35} 
+        opacity={0.3} 
       />
     </points>
   );
@@ -93,7 +94,8 @@ function TravelPulse({ start, end }) {
   return (
     <mesh ref={pulseRef}>
       <sphereGeometry args={[0.075, 8, 8]} />
-      <meshBasicMaterial color="hsl(140, 100%, 50%)" />
+      {/* Bloom threshold will pick up colors > 1 */}
+      <meshBasicMaterial color={[0, 4, 2]} toneMapped={false} />
     </mesh>
   );
 }
@@ -120,23 +122,21 @@ const VENUE_COORDINATES = {
 
 // 3D Pins Component inside Canvas
 function GlobePins({ selectedVenueId, onSelectVenue, flightPath }) {
-  const pinRefs = useRef({});
-
   return (
     <group>
-      {/* 3D Sphere Globe representing North America Earth */}
+      {/* 3D Sphere Globe representing Earth Core (Vantablack) */}
       <mesh receiveShadow>
         <sphereGeometry args={[GLOBE_RADIUS, 64, 64]} />
-        <meshStandardMaterial color="#05060b" roughness={0.9} metalness={0.2} />
+        <meshStandardMaterial color="#020202" roughness={0.9} metalness={0.1} />
       </mesh>
 
       {/* Procedural Dotted World Map */}
       <DottedGlobe />
       
-      {/* Wireframe Outline for high-tech look */}
+      {/* Subtle Atmospheric glow */}
       <mesh>
-        <sphereGeometry args={[GLOBE_RADIUS + 0.02, 24, 24]} />
-        <meshBasicMaterial color="#d4af37" wireframe transparent opacity={0.07} />
+        <sphereGeometry args={[GLOBE_RADIUS + 0.015, 64, 64]} />
+        <meshBasicMaterial color="#ffffff" transparent opacity={0.02} side={THREE.BackSide} />
       </mesh>
 
       {/* Render 16 Venue Pins */}
@@ -146,26 +146,27 @@ function GlobePins({ selectedVenueId, onSelectVenue, flightPath }) {
         
         return (
           <group key={vid} position={[pos.x, pos.y, pos.z]}>
-            {/* Pulsing glow ring under pin */}
+            {/* Glowing pin base */}
             <mesh>
-              <ringGeometry args={[0.08, 0.12, 16]} />
+              <ringGeometry args={[0.04, 0.08, 32]} />
               <meshBasicMaterial 
-                color={isSelected ? "#39ff14" : "#d4af37"} 
+                color={isSelected ? [0, 4, 2] : [1, 1, 1]} 
+                toneMapped={false}
                 transparent 
-                opacity={isSelected ? 0.8 : 0.4} 
+                opacity={isSelected ? 1 : 0.2} 
                 side={2}
               />
             </mesh>
             {/* Cartesian pointer */}
             <mesh 
-              position={[0, 0, 0.1]} 
+              position={[0, 0, 0.05]} 
               onClick={(e) => {
                 e.stopPropagation();
                 onSelectVenue(vid);
               }}
             >
-              <sphereGeometry args={[0.07, 16, 16]} />
-              <meshBasicMaterial color={isSelected ? "#39ff14" : "#d4af37"} />
+              <sphereGeometry args={[0.06, 16, 16]} />
+              <meshBasicMaterial color={isSelected ? [0, 5, 2] : "#444444"} toneMapped={false} />
             </mesh>
           </group>
         );
@@ -193,12 +194,13 @@ function FlightPathLine({ start, end }) {
   midVec.normalize().multiplyScalar(GLOBE_RADIUS + 0.2 + dist * 0.15); // curved elevation
 
   const curve = new THREE.QuadraticBezierCurve3(startVec, midVec, endVec);
-  const points = curve.getPoints(50);
+  const points = curve.getPoints(64);
 
   return (
     <Line
       points={points}
-      color="hsl(45, 100%, 50%)"
+      color={[0, 2, 1]} // Glowing green
+      toneMapped={false}
       lineWidth={1.5}
       transparent
       opacity={0.8}
@@ -228,134 +230,148 @@ export default function BroadcastMap({ selectedVenueId, onSelectVenue, flightPat
   // 2D SVG Fallback Map
   if (!webGLSupported) {
     return (
-      <div className="w-full h-full min-h-[400px] bg-[#070911] border border-white/5 rounded-[2rem] flex flex-col justify-between p-8 relative liquid-glass overflow-hidden">
-        <div className="absolute top-6 left-6 z-10">
-          <div className="text-xs uppercase font-display text-fifagold font-bold tracking-widest">
-            2D fallback SVG broadcast layout
+      <div className="w-full h-full min-h-[400px] bg-[#050505] ring-1 ring-white/10 rounded-[2rem] p-1.5 flex flex-col relative overflow-hidden">
+        <div className="w-full h-full bg-[#0a0a0a] rounded-[calc(2rem-0.375rem)] p-8 flex flex-col justify-between shadow-[inset_0_1px_1px_rgba(255,255,255,0.05)] relative">
+          <div className="absolute top-8 left-8 z-10">
+            <div className="text-[10px] uppercase font-mono text-fifagold tracking-[0.2em]">
+              2D Fallback SVG
+            </div>
+            <h2 className="text-3xl font-display text-white tracking-tight mt-2">Host Venues</h2>
           </div>
-          <h2 className="text-xl font-display text-white font-semibold mt-1">Host Venues</h2>
-        </div>
-        
-        {/* Render 2D Map of North America venues */}
-        <div className="flex-1 flex items-center justify-center p-4">
-          <svg viewBox="0 0 800 450" className="w-full max-w-2xl h-auto opacity-70">
-            {/* Outline of USA/Canada/Mexico */}
-            <path d="M150,50 L650,50 L700,400 L200,400 Z" fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth={1} />
-            
-            {/* Draw Travel flight path in 2D if active */}
-            {flightPath && (() => {
-              const startCoords = VENUE_COORDINATES[flightPath.start.id];
-              const endCoords = VENUE_COORDINATES[flightPath.end.id];
-              if (startCoords && endCoords) {
-                // Map coordinates roughly to SVG canvas size
+          
+          <div className="flex-1 flex items-center justify-center p-4">
+            <svg viewBox="0 0 800 450" className="w-full max-w-2xl h-auto opacity-40">
+              <path d="M150,50 L650,50 L700,400 L200,400 Z" fill="none" stroke="rgba(255,255,255,0.1)" strokeWidth={1} />
+              
+              {flightPath && (() => {
+                const startCoords = VENUE_COORDINATES[flightPath.start.id];
+                const endCoords = VENUE_COORDINATES[flightPath.end.id];
+                if (startCoords && endCoords) {
+                  const mapX = (lon) => 400 + (lon + 95) * 8;
+                  const mapY = (lat) => 225 - (lat - 35) * 8;
+                  const sx = mapX(startCoords.lon);
+                  const sy = mapY(startCoords.lat);
+                  const ex = mapX(endCoords.lon);
+                  const ey = mapY(endCoords.lat);
+                  return (
+                    <path
+                      d={`M${sx},${sy} Q${(sx+ex)/2},${Math.min(sy,ey)-50} ${ex},${ey}`}
+                      fill="none"
+                      stroke="hsl(140, 100%, 50%)"
+                      strokeWidth={1}
+                      strokeDasharray="4 4"
+                    />
+                  );
+                }
+              })()}
+
+              {Object.entries(VENUE_COORDINATES).map(([vid, data]) => {
                 const mapX = (lon) => 400 + (lon + 95) * 8;
                 const mapY = (lat) => 225 - (lat - 35) * 8;
-                const sx = mapX(startCoords.lon);
-                const sy = mapY(startCoords.lat);
-                const ex = mapX(endCoords.lon);
-                const ey = mapY(endCoords.lat);
+                const x = mapX(data.lon);
+                const y = mapY(data.lat);
+                const isSelected = selectedVenueId === vid;
+                
                 return (
-                  <path
-                    d={`M${sx},${sy} Q${(sx+ex)/2},${Math.min(sy,ey)-50} ${ex},${ey}`}
-                    fill="none"
-                    stroke="hsl(45, 100%, 50%)"
-                    strokeWidth={1.5}
-                    strokeDasharray="4 4"
-                  />
+                  <g key={vid} className="cursor-pointer" onClick={() => onSelectVenue(vid)}>
+                    <circle cx={x} cy={y} r={isSelected ? 6 : 3} fill={isSelected ? "hsl(140, 100%, 50%)" : "#ffffff"} />
+                    {isSelected && <circle cx={x} cy={y} r={12} fill="none" stroke="hsl(140, 100%, 50%)" strokeWidth={1} className="animate-ping" />}
+                    <text x={x + 10} y={y + 3} fill={isSelected ? "#ffffff" : "rgba(255,255,255,0.4)"} fontSize="10" fontFamily="Space Grotesk">
+                      {data.city}
+                    </text>
+                  </g>
                 );
-              }
-            })()}
-
-            {/* Plot 16 relative dots */}
-            {Object.entries(VENUE_COORDINATES).map(([vid, data]) => {
-              // rough projection mapping to canvas
-              const mapX = (lon) => 400 + (lon + 95) * 8;
-              const mapY = (lat) => 225 - (lat - 35) * 8;
-              const x = mapX(data.lon);
-              const y = mapY(data.lat);
-              const isSelected = selectedVenueId === vid;
-              
-              return (
-                <g key={vid} className="cursor-pointer" onClick={() => onSelectVenue(vid)}>
-                  <circle cx={x} cy={y} r={isSelected ? 8 : 4} fill={isSelected ? "#39ff14" : "#d4af37"} />
-                  {isSelected && <circle cx={x} cy={y} r={14} fill="none" stroke="#39ff14" strokeWidth={1.5} className="animate-ping" />}
-                  <text x={x + 10} y={y + 4} fill={isSelected ? "#ffffff" : "rgba(255,255,255,0.4)"} fontSize="10" fontFamily="sans-serif">
-                    {data.city}
-                  </text>
-                </g>
-              );
-            })}
-          </svg>
-        </div>
-
-        {/* HUD Info */}
-        <div className="flex justify-between items-center text-xs text-slate-500 border-t border-white/5 pt-4">
-          <span>WebGL disabled: using lightweight 2D vectors</span>
-          <span>16 Official Venues mapped</span>
+              })}
+            </svg>
+          </div>
+          
+          <div className="flex justify-between items-center text-[10px] text-white/30 border-t border-white/5 pt-6 font-mono tracking-widest">
+            <span>WEBGL DISABLED</span>
+            <span>16 OFFICIAL VENUES</span>
+          </div>
         </div>
       </div>
     );
   }
 
-  // 3D Canvas Globe Layout
-  // Resolves flight path GPS from selected ID
+  // 3D Canvas Globe Layout with Double-Bezel Ethereal Glass
   const resolvedFlightPath = flightPath ? {
     start: VENUE_COORDINATES[flightPath.start.id],
     end: VENUE_COORDINATES[flightPath.end.id]
   } : null;
 
   return (
-    <div className="w-full h-full min-h-[450px] bg-[#070911] border border-white/5 rounded-[2rem] relative liquid-glass overflow-hidden">
-      <div className="absolute top-6 left-6 z-10 pointer-events-none">
-        <div className="text-xs uppercase font-display text-fifagold font-bold tracking-widest">
-          3D interactive venue globe
-        </div>
-        <h2 className="text-xl font-display text-white font-semibold mt-1">North America Venues</h2>
-      </div>
-
-      {/* R3F Canvas Container */}
-      <Canvas
-        camera={{ position: [0, 0, 10], fov: 60 }}
-        dpr={isMobile ? 1 : 2} // Clamp mobile DPR to 1 for high frame rates
-        shadows
-      >
-        <GlobePins 
-          selectedVenueId={selectedVenueId} 
-          onSelectVenue={onSelectVenue}
-          flightPath={resolvedFlightPath}
-        />
-        <OrbitControls 
-          enableZoom={false} // Disable zoom to prevent scroll hijacking on mobile touch
-          enablePan={false}
-          minPolarAngle={Math.PI / 4}
-          maxPolarAngle={Math.PI - Math.PI / 4}
-        />
-      </Canvas>
-
-      {/* Interactive Overlay Travel Telemetry */}
-      {flightPath && (
-        <div className="absolute bottom-6 left-6 right-6 flex justify-between items-center bg-black/40 backdrop-blur-md rounded-2xl p-4 border border-white/5 pointer-events-none">
-          <div className="flex items-center gap-3">
-            <TravelIcon className="w-5 h-5 text-fifagold" />
-            <div>
-              <div className="text-[10px] text-slate-400 uppercase tracking-widest">Travel Distance</div>
-              <div className="text-sm font-mono font-bold text-white">
-                {flightPath.distance_km.toLocaleString()} km
-              </div>
-            </div>
+    <div className="w-full h-full min-h-[500px] bg-[#050505] ring-1 ring-white/10 rounded-[2rem] p-1.5 flex flex-col relative overflow-hidden group">
+      {/* Inner Core */}
+      <div className="w-full h-full bg-[#080808] rounded-[calc(2rem-0.375rem)] shadow-[inset_0_1px_1px_rgba(255,255,255,0.05)] relative overflow-hidden">
+        
+        <div className="absolute top-8 left-8 z-10 pointer-events-none">
+          <div className="text-[10px] uppercase font-mono text-white/50 tracking-[0.2em]">
+            Interactive Telemetry
           </div>
+          <h2 className="text-3xl font-display text-white tracking-tight mt-2">Global Venues</h2>
+        </div>
+
+        {/* R3F Canvas Container */}
+        <Canvas
+          camera={{ position: [0, 0, 10], fov: 60 }}
+          dpr={isMobile ? 1 : [1, 2]}
+          gl={{ antialias: false }} // Post-processing handles antialiasing
+        >
+          <color attach="background" args={['#080808']} />
+          <ambientLight intensity={0.5} />
+          <directionalLight position={[10, 10, 5]} intensity={1} />
           
-          <div className="flex items-center gap-3">
-            <AltitudeIcon className="w-5 h-5 text-fifagold" />
-            <div>
-              <div className="text-[10px] text-slate-400 uppercase tracking-widest">Altitude Delta</div>
-              <div className="text-sm font-mono font-bold text-white">
-                {flightPath.altitude_diff_m.toLocaleString()} m
+          <GlobePins 
+            selectedVenueId={selectedVenueId} 
+            onSelectVenue={onSelectVenue}
+            flightPath={resolvedFlightPath}
+          />
+          
+          <OrbitControls 
+            enableZoom={false} 
+            enablePan={false}
+            minPolarAngle={Math.PI / 4}
+            maxPolarAngle={Math.PI - Math.PI / 4}
+            autoRotate
+            autoRotateSpeed={0.5}
+          />
+
+          <EffectComposer disableNormalPass>
+            <Bloom luminanceThreshold={1} mipmapBlur intensity={1.5} />
+            <Vignette eskil={false} offset={0.1} darkness={1.1} />
+          </EffectComposer>
+        </Canvas>
+
+        {/* Interactive Overlay Travel Telemetry */}
+        {flightPath && (
+          <div className="absolute bottom-8 left-8 right-8 flex justify-between items-center bg-black/60 backdrop-blur-2xl rounded-full p-4 px-8 border border-white/10 pointer-events-none transition-all duration-700 ease-[cubic-bezier(0.32,0.72,0,1)]">
+            <div className="flex items-center gap-4">
+              <div className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center border border-white/10">
+                <TravelIcon className="w-5 h-5 text-white" strokeWidth={1} />
+              </div>
+              <div>
+                <div className="text-[10px] text-white/50 font-mono tracking-widest">DISTANCE</div>
+                <div className="text-lg font-display text-white">
+                  {flightPath.distance_km.toLocaleString()} <span className="text-sm text-white/50">km</span>
+                </div>
+              </div>
+            </div>
+            
+            <div className="flex items-center gap-4">
+              <div className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center border border-white/10">
+                <AltitudeIcon className="w-5 h-5 text-white" strokeWidth={1} />
+              </div>
+              <div>
+                <div className="text-[10px] text-white/50 font-mono tracking-widest">ALTITUDE DELTA</div>
+                <div className="text-lg font-display text-white">
+                  {flightPath.altitude_diff_m.toLocaleString()} <span className="text-sm text-white/50">m</span>
+                </div>
               </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }

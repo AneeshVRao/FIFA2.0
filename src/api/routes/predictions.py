@@ -141,24 +141,106 @@ async def get_venues():
 
 @router.get("/matches", response_model=MatchesListResponse)
 async def get_matches():
-    try:
-        matches = []
-        for m_num, m_info in sorted(STATIC_SCHEDULE.items(), key=lambda x: int(x[0])):
-            matches.append(MatchListItem(
-                match_id=m_info["match_id"],
-                stage=m_info["stage"],
-                group_code=m_info["group_code"],
-                team_a_id=m_info["team_a_id"],
-                team_a_name=m_info["team_a_name"],
-                team_b_id=m_info["team_b_id"],
-                team_b_name=m_info["team_b_name"],
-                venue_id=m_info["venue_id"],
-                venue_name=m_info["venue_name"],
-                altitude_m=m_info["altitude_m"]
-            ))
-        return MatchesListResponse(matches=matches)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to generate matches list: {str(e)}")
+    with get_db_connection() as conn:
+        has_fct_matches = False
+        try:
+            table_check = conn.execute(
+                "SELECT 1 FROM information_schema.tables WHERE table_name = 'fct_matches'"
+            ).fetchone()
+            if table_check:
+                has_fct_matches = True
+        except Exception:
+            pass
+
+        if has_fct_matches:
+            try:
+                query = """
+                    SELECT 
+                        m.match_id,
+                        m.stage,
+                        m.team_a_id,
+                        m.team_a_name,
+                        m.team_b_id,
+                        m.team_b_name,
+                        m.goals_a AS home_goals,
+                        m.goals_b AS away_goals,
+                        m.went_to_extra_time,
+                        m.went_to_penalties,
+                        m.penalty_winner,
+                        m.venue_id,
+                        v.stadium_name AS venue_name,
+                        v.altitude_m AS altitude_m
+                    FROM fct_matches m
+                    LEFT JOIN dim_venues v ON m.venue_id = v.venue_id
+                    ORDER BY CAST(REPLACE(m.match_id, 'match_', '') AS INTEGER)
+                """
+                df = conn.execute(query).fetchdf()
+                matches_data = df.to_dict(orient="records")
+                
+                df_venues = conn.execute("SELECT venue_id, stadium_name, altitude_m FROM dim_venues").fetchdf()
+                venue_map = {row["venue_id"]: row for row in df_venues.to_dict(orient="records")}
+                
+                matches = []
+                for m in matches_data:
+                    m_num_str = m["match_id"].replace("match_", "")
+                    m_static = STATIC_SCHEDULE.get(m_num_str, {})
+                    
+                    vid = m["venue_id"]
+                    vname = m["venue_name"]
+                    valt = m["altitude_m"]
+                    
+                    if not vid or vid == 'None':
+                        vid = m_static.get("venue_id", "v_atlanta")
+                        vname = m_static.get("venue_name", "Unknown Stadium")
+                        valt = m_static.get("altitude_m", 0.0)
+                    elif not vname:
+                        if vid in venue_map:
+                            vname = venue_map[vid]["stadium_name"]
+                            valt = float(venue_map[vid]["altitude_m"])
+                        else:
+                            vname = m_static.get("venue_name", "Unknown Stadium")
+                            valt = m_static.get("altitude_m", 0.0)
+
+                    matches.append(MatchListItem(
+                        match_id=m["match_id"],
+                        stage=m_static.get("stage", m["stage"]),
+                        group_code=m_static.get("group_code"),
+                        team_a_id=m["team_a_id"],
+                        team_a_name=m["team_a_name"],
+                        team_b_id=m["team_b_id"],
+                        team_b_name=m["team_b_name"],
+                        venue_id=vid,
+                        venue_name=vname,
+                        altitude_m=float(valt) if valt is not None else 0.0,
+                        home_goals=int(m["home_goals"]) if m["home_goals"] is not None else None,
+                        away_goals=int(m["away_goals"]) if m["away_goals"] is not None else None,
+                        went_to_extra_time=bool(m["went_to_extra_time"]) if m["went_to_extra_time"] is not None else None,
+                        went_to_penalties=bool(m["went_to_penalties"]) if m["went_to_penalties"] is not None else None,
+                        penalty_winner=m["penalty_winner"]
+                    ))
+                return MatchesListResponse(matches=matches)
+            except Exception as e:
+                pass
+
+        # Static fallback
+        try:
+            matches = []
+            for m_num, m_info in sorted(STATIC_SCHEDULE.items(), key=lambda x: int(x[0])):
+                matches.append(MatchListItem(
+                    match_id=m_info["match_id"],
+                    stage=m_info["stage"],
+                    group_code=m_info["group_code"],
+                    team_a_id=m_info["team_a_id"],
+                    team_a_name=m_info["team_a_name"],
+                    team_b_id=m_info["team_b_id"],
+                    team_b_name=m_info["team_b_name"],
+                    venue_id=m_info["venue_id"],
+                    venue_name=m_info["venue_name"],
+                    altitude_m=m_info["altitude_m"]
+                ))
+            return MatchesListResponse(matches=matches)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to generate matches list: {str(e)}")
 
 @router.get("/winner", response_model=WinnerResponse)
 async def get_winner_probabilities():
@@ -201,21 +283,37 @@ async def get_match_prediction(match_id: str):
         raise HTTPException(status_code=404, detail=f"Match ID '{match_id}' not found in schedule.")
         
     m_info = STATIC_SCHEDULE[match_num_str]
-    team_a_id = m_info["team_a_id"]
-    team_b_id = m_info["team_b_id"]
-    
-    # Check if matchup predictions are available in matchup_forecasts (based on team IDs)
+    team_a_id = None
+    team_b_id = None
+    team_a_name = None
+    team_b_name = None
+    venue_id = None
+    venue_name = None
+    altitude_m = None
+
     with get_db_connection() as conn:
-        # Lexicographic swap check
-        query = """
-            SELECT * 
-            FROM matchup_forecasts
-            WHERE (team_a_id = ? AND team_b_id = ?) 
-               OR (team_a_id = ? AND team_b_id = ?)
-        """
-        row = conn.execute(query, [team_a_id, team_b_id, team_b_id, team_a_id]).fetchone()
+        try:
+            m_db = conn.execute(
+                "SELECT team_a_id, team_a_name, team_b_id, team_b_name, venue_id FROM fct_matches WHERE match_id = ?",
+                [match_id]
+            ).fetchone()
+            if m_db:
+                team_a_id, team_a_name, team_b_id, team_b_name, venue_id = m_db
+        except Exception:
+            pass
+
+    if not team_a_id:
+        team_a_id = m_info["team_a_id"]
+        team_a_name = m_info["team_a_name"]
+    if not team_b_id:
+        team_b_id = m_info["team_b_id"]
+        team_b_name = m_info["team_b_name"]
+    if not venue_id or venue_id == 'None':
+        venue_id = m_info["venue_id"]
+        venue_name = m_info["venue_name"]
+        altitude_m = m_info["altitude_m"]
         
-        # Resolve team details from dim_teams
+    with get_db_connection() as conn:
         team_details = conn.execute(
             "SELECT reep_team_id, team_name_canonical, squad_market_value_eur FROM dim_teams WHERE reep_team_id IN (?, ?)",
             [team_a_id, team_b_id]
@@ -223,12 +321,10 @@ async def get_match_prediction(match_id: str):
         
         team_map = {t["reep_team_id"]: t for t in team_details.to_dict(orient="records")}
         
-        # Default features values
         elo_diff = 0.0
         val_diff = 0.0
         is_host_applied = team_a_id in ["T-83", "T-46", "T-12"]
         
-        # Try to resolve Elo ratings
         elo_row = conn.execute(
             "SELECT reep_team_id, pretournament_elo FROM dim_teams WHERE reep_team_id IN (?, ?)",
             [team_a_id, team_b_id]
@@ -241,24 +337,41 @@ async def get_match_prediction(match_id: str):
         if team_a_id in team_map and team_b_id in team_map:
             val_diff = float(team_map[team_a_id]["squad_market_value_eur"] - team_map[team_b_id]["squad_market_value_eur"])
 
-        # Construct team references
-        home_ref = TeamRef(id=team_a_id, name=m_info["team_a_name"])
-        away_ref = TeamRef(id=team_b_id, name=m_info["team_b_name"])
-        venue_ref = VenueRef(id=m_info["venue_id"], name=m_info["venue_name"], altitude_m=m_info["altitude_m"])
+        if not venue_name or altitude_m is None:
+            v_row = conn.execute(
+                "SELECT stadium_name, altitude_m FROM dim_venues WHERE venue_id = ?",
+                [venue_id]
+            ).fetchone()
+            if v_row:
+                venue_name, altitude_m = v_row[0], float(v_row[1])
+            else:
+                venue_name = m_info["venue_name"]
+                altitude_m = m_info["altitude_m"]
+
+        home_ref = TeamRef(id=team_a_id, name=team_a_name)
+        away_ref = TeamRef(id=team_b_id, name=team_b_name)
+        venue_ref = VenueRef(id=venue_id, name=venue_name, altitude_m=float(altitude_m))
         
         influence = InfluenceFeatures(
             elo_differential=elo_diff,
             squad_value_diff_eur=val_diff,
-            altitude_m=m_info["altitude_m"],
+            altitude_m=float(altitude_m),
             travel_distance_km=450.0,
             host_advantage_applied=is_host_applied
         )
 
+        row = conn.execute(
+            """
+            SELECT * 
+            FROM matchup_forecasts
+            WHERE (team_a_id = ? AND team_b_id = ?) 
+               OR (team_a_id = ? AND team_b_id = ?)
+            """,
+            [team_a_id, team_b_id, team_b_id, team_a_id]
+        ).fetchone()
+        
         if row:
-            # Table columns: team_a_id, team_b_id, p_team_a_win, p_draw, p_team_b_win, team_a_xg, team_b_xg, most_likely_scorelines
             db_team_a, db_team_b, p_a, p_draw, p_b, xg_a, xg_b, scores_json, _ = row
-            
-            # Swapping check
             is_swapped = (db_team_a == team_b_id)
             
             p_home = p_b if is_swapped else p_a
@@ -272,7 +385,6 @@ async def get_match_prediction(match_id: str):
             for s in scorelines_list:
                 score = s["score"]
                 if is_swapped:
-                    # Invert scoreline e.g. '2-0' to '0-2'
                     parts = score.split("-")
                     score = f"{parts[1]}-{parts[0]}"
                 top_scorelines.append(ScorelineProb(scoreline=score, probability=s["probability"]))
@@ -289,9 +401,6 @@ async def get_match_prediction(match_id: str):
                 influence_features=influence
             )
         else:
-            # If match predictions are not precomputed (e.g. custom matchups or empty slots)
-            # compute standard Poisson/Dixon-Coles on the fly.
-            # Default values:
             p_home, p_draw, p_away = 0.33, 0.34, 0.33
             xg_home, xg_away = 1.0, 1.0
             top_scorelines = [
@@ -300,15 +409,14 @@ async def get_match_prediction(match_id: str):
                 ScorelineProb(scoreline="0-1", probability=0.10)
             ]
             
-            # If teams are actual valid team entities
             if team_a_id in elo_map and team_b_id in elo_map:
                 lam, mu = get_match_xg(
                     elo_a=elo_map[team_a_id],
                     elo_b=elo_map[team_b_id],
                     is_host_a=team_a_id in ["T-83", "T-46", "T-12"],
                     is_host_b=team_b_id in ["T-83", "T-46", "T-12"],
-                    venue_alt=m_info["altitude_m"],
-                    native_alt_a=0.0, # fallback
+                    venue_alt=float(altitude_m),
+                    native_alt_a=0.0,
                     native_alt_b=0.0,
                     travel_a_km=0.0,
                     travel_b_km=0.0,
@@ -321,7 +429,6 @@ async def get_match_prediction(match_id: str):
                 p_draw = float(sum(grid[i, i] for i in range(grid.shape[0])))
                 p_away = float(sum(grid[i, j] for i in range(grid.shape[0]) for j in range(grid.shape[1]) if i < j))
                 
-                # Fetch top scorelines
                 scores_flat = []
                 for i in range(grid.shape[0]):
                     for j in range(grid.shape[1]):

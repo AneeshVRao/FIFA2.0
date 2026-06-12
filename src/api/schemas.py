@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from datetime import datetime
 from typing import List, Dict, Optional
 
@@ -160,8 +160,7 @@ class GroupStandingsDistribution(BaseModel):
     third_advance: float = Field(..., alias="3rd_advance")
     eliminated: float = Field(..., alias="eliminated")
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
 class TeamStageProbsResponse(BaseResponseModel):
     reep_team_id: str
@@ -211,7 +210,7 @@ class VenuesListResponse(BaseResponseModel):
 class MatchListItem(BaseModel):
     match_id: str
     stage: str
-    group_code: Optional[str]
+    group_code: Optional[str] = None
     team_a_id: str
     team_a_name: str
     team_b_id: str
@@ -219,6 +218,11 @@ class MatchListItem(BaseModel):
     venue_id: str
     venue_name: str
     altitude_m: float
+    home_goals: Optional[int] = None
+    away_goals: Optional[int] = None
+    went_to_extra_time: Optional[bool] = None
+    went_to_penalties: Optional[bool] = None
+    penalty_winner: Optional[str] = None
 
 class MatchesListResponse(BaseResponseModel):
     matches: List[MatchListItem]
